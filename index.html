@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Gigante Animado</title>
+    <title>Slot Sombras y Luces</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Cargando Slot XL...</div>
+    <div id="loading">Cargando Iluminación...</div>
 
     <script type="importmap">
         {
@@ -33,57 +33,80 @@
 
         // --- 1. CONFIGURACIÓN ---
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb']; 
-        
-        const GIRAR_180_GRADOS = true; // Ajuste de rotación
+        const GIRAR_180_GRADOS = true; 
 
+        // Dimensiones Gigantes
         const NUM_CARRETES = 3;     
         const SEPARACION_CARRETES = 4.5; 
-
-        // [CAMBIO] Añadimos 2 símbolos más para cubrir el nuevo tamaño (5 + 2 = 7)
         const NUM_ITEMS_POR_RUEDA = 7; 
-        
-        // [CAMBIO] Aumentamos diámetro un 50% (3.5 * 1.5 = 5.25)
         const RADIO_CILINDRO_FONDO = 5.25; 
-
-        // [CAMBIO] Aumentamos órbita un 50% (4.5 * 1.5 = 6.75)
         const RADIO_ORBITA_SIMBOLOS = 6.75; 
-
         const ESCALA_SIMBOLOS = 4.5; 
 
-        // --- 2. ESCENA ---
+        // --- 2. ESCENA Y RENDER CON SOMBRAS ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x111111);
 
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
-        // [CAMBIO] Alejamos la cámara porque la máquina es más grande (antes 30)
         camera.position.set(0, 0, 45); 
         
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        
+        // [NUEVO] ACTIVAR MAPA DE SOMBRAS
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Sombras suaves
+        
         document.body.appendChild(renderer.domElement);
 
-        // Reloj y Mixers para animación
         const clock = new THREE.Clock();
         const mixers = [];
 
-        // Luces
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+        // --- 3. ILUMINACIÓN (SOL) ---
+        
+        // Luz ambiente suave (para que las sombras no sean negras absolutas)
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
-        dirLight.position.set(0, 15, 20); // Luz más alta también
-        scene.add(dirLight);
 
-        // --- 3. CILINDRO DE FONDO ---
-        // Aumentamos un poco el largo (22) para asegurar que cubra todo
+        // Luz del Sol (DirectionalLight)
+        const sunLight = new THREE.DirectionalLight(0xffddaa, 3); // Tono ligeramente cálido
+        
+        // Posición: Izquierda (-20), Arriba (20), Frente (10)
+        sunLight.position.set(-20, 20, 10); 
+        
+        // [NUEVO] Configurar proyección de sombras
+        sunLight.castShadow = true;
+        
+        // Ajustar la calidad y el área de la sombra
+        sunLight.shadow.mapSize.width = 2048; // Mayor resolución
+        sunLight.shadow.mapSize.height = 2048;
+        
+        // Ajustar el "rectángulo" que cubre la luz para abarcar toda la máquina gigante
+        const d = 20;
+        sunLight.shadow.camera.left = -d;
+        sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d;
+        sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.camera.far = 100;
+
+        scene.add(sunLight);
+
+        // --- 4. CILINDRO DE FONDO ---
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
         const cylinderMat = new THREE.MeshStandardMaterial({ 
-            color: 0xcccccc, roughness: 0.4, metalness: 0.2 
+            color: 0xdddddd, 
+            roughness: 0.5, 
+            metalness: 0.1 
         });
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
+        
+        // [NUEVO] El cilindro debe RECIBIR la sombra
+        backgroundCylinder.receiveShadow = true; 
+        
         scene.add(backgroundCylinder);
 
-        // --- 4. CARGA Y CREACIÓN ---
+        // --- 5. CARGA Y CREACIÓN ---
         const reels = []; 
         const loader = new GLTFLoader();
         let itemsLoaded = 0;
@@ -102,23 +125,30 @@
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
+                    // --- [NUEVO] ACTIVAR SOMBRAS EN EL MODELO ---
+                    // Recorremos todas las partes del modelo 3D
+                    rawModel.traverse(function (node) {
+                        if (node.isMesh) {
+                            node.castShadow = true;    // El símbolo proyecta sombra
+                            node.receiveShadow = true; // El símbolo recibe sombra de otros (opcional)
+                        }
+                    });
+
                     // --- ANIMACIONES ---
                     if (gltf.animations && gltf.animations.length > 0) {
                         const mixer = new THREE.AnimationMixer(rawModel);
-                        // Usamos la primera animación disponible
                         const action = mixer.clipAction(gltf.animations[0]);
                         action.play();
                         mixers.push(mixer);
                     }
 
-                    // --- CENTRADO (PIVOT) ---
+                    // --- POSICIONAMIENTO ---
                     const pivotWrapper = new THREE.Group();
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     rawModel.position.sub(center);
                     pivotWrapper.add(rawModel);
 
-                    // --- ESCALA Y POSICIÓN ---
                     pivotWrapper.scale.set(ESCALA_SIMBOLOS, ESCALA_SIMBOLOS, ESCALA_SIMBOLOS);
 
                     const angle = (i / NUM_ITEMS_POR_RUEDA) * Math.PI * 2;
@@ -126,7 +156,6 @@
                     const z = Math.sin(angle) * RADIO_ORBITA_SIMBOLOS;
                     pivotWrapper.position.set(0, y, z); 
 
-                    // --- ORIENTACIÓN ---
                     pivotWrapper.lookAt(0, 0, 0); 
                     pivotWrapper.rotateY(Math.PI); 
                     
@@ -149,18 +178,13 @@
             crearHilera(r);
         }
 
-        // --- 5. LOOP DE ANIMACIÓN ---
+        // --- 6. LOOP ---
         function animate() {
             requestAnimationFrame(animate);
 
             const delta = clock.getDelta();
+            for (const mixer of mixers) mixer.update(delta);
 
-            // Actualizar animaciones de personajes (caminar/idle)
-            for (const mixer of mixers) {
-                mixer.update(delta);
-            }
-
-            // Girar los rodillos
             if(reels[0]) reels[0].rotation.x += 0.02; 
             if(reels[1]) reels[1].rotation.x += 0.02; 
             if(reels[2]) reels[2].rotation.x += 0.02; 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Iluminación Pro</title>
+    <title>Slot Optimizado Mobile</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Renderizando Luces...</div>
+    <div id="loading">Cargando Versión Ligera...</div>
 
     <script type="importmap">
         {
@@ -35,7 +35,6 @@
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb']; 
         const GIRAR_180_GRADOS = true; 
 
-        // Dimensiones
         const NUM_CARRETES = 3;     
         const SEPARACION_CARRETES = 4.5; 
         const NUM_ITEMS_POR_RUEDA = 7; 
@@ -43,18 +42,27 @@
         const RADIO_ORBITA_SIMBOLOS = 6.75; 
         const ESCALA_SIMBOLOS = 4.5; 
 
-        // --- 2. ESCENA ---
+        // --- 2. ESCENA Y RENDER OPTIMIZADO ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x111111); // Fondo oscuro
+        scene.background = new THREE.Color(0x111111);
 
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
         camera.position.set(0, 0, 45); 
         
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        // [OPTIMIZACIÓN 1] Antialias consume recursos. Si sigue lento, ponlo en false.
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         
-        // Sombras suaves activadas
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        // [OPTIMIZACIÓN 2 - LA MÁS IMPORTANTE]
+        // Limitamos la resolución interna. Los móviles tienen muchos píxeles, 
+        // no hace falta calcularlos todos para un juego 3D. 
+        // Máximo 1.5 o 2 de densidad.
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        
         renderer.shadowMap.enabled = true;
+        // Cambiamos a un tipo de sombra un poco más rápido si es necesario, 
+        // pero PCFSoft suele verse mejor.
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         
         document.body.appendChild(renderer.domElement);
@@ -62,41 +70,40 @@
         const clock = new THREE.Clock();
         const mixers = [];
 
-        // --- 3. ILUMINACIÓN MEJORADA ---
+        // --- 3. ILUMINACIÓN ---
 
-        // A. LUZ AMBIENTE (Subida intensidad)
-        // Ilumina todo por igual, evita sombras negras totales
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Antes 0.6
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
         scene.add(ambientLight);
 
-        // B. LUZ PRINCIPAL "SOL" (Arriba-Izquierda)
-        // Tono cálido, proyecta sombras, alta intensidad
-        const sunLight = new THREE.DirectionalLight(0xffddaa, 5); // Intensidad subida a 5
+        const sunLight = new THREE.DirectionalLight(0xffddaa, 5);
         sunLight.position.set(-20, 20, 10); 
         sunLight.castShadow = true;
         
-        // Configuración de sombra del sol
-        sunLight.shadow.mapSize.width = 2048;
-        sunLight.shadow.mapSize.height = 2048;
-        const d = 25; // Área de sombra
+        // [OPTIMIZACIÓN 3] Bajamos la resolución del mapa de sombras
+        // Antes 2048 -> Ahora 1024 (4 veces menos memoria)
+        sunLight.shadow.mapSize.width = 1024;
+        sunLight.shadow.mapSize.height = 1024;
+        
+        // Área de sombra
+        const d = 25; 
         sunLight.shadow.camera.left = -d;
         sunLight.shadow.camera.right = d;
         sunLight.shadow.camera.top = d;
         sunLight.shadow.camera.bottom = -d;
         sunLight.shadow.camera.far = 100;
+        // Pequeño ajuste para evitar "artefactos" o rayas en las sombras
+        sunLight.shadow.bias = -0.0005; 
+        
         scene.add(sunLight);
 
-        // C. LUZ DE RELLENO / CONTRALUZ (Abajo-Derecha) - [NUEVA]
-        // Tono azulado frío, intensidad media, SIN sombras
+        // Luz de relleno (sin sombras, muy barata de renderizar)
         const fillLight = new THREE.DirectionalLight(0xddeeff, 2.5); 
-        // Posición: Derecha (+20), Abajo (-15), Frente (+10)
         fillLight.position.set(20, -15, 10); 
-        fillLight.castShadow = false; // No proyecta sombra, solo ilumina
+        fillLight.castShadow = false; 
         scene.add(fillLight);
 
-
         // --- 4. CILINDRO DE FONDO ---
-        const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
+        const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 32); // [Opt] Bajamos segmentos de 64 a 32
         const cylinderMat = new THREE.MeshStandardMaterial({ 
             color: 0xdddddd, 
             roughness: 0.5, 
@@ -104,7 +111,7 @@
         });
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
-        backgroundCylinder.receiveShadow = true; // Recibe sombras de los iconos
+        backgroundCylinder.receiveShadow = true; 
         scene.add(backgroundCylinder);
 
         // --- 5. CARGA DE MODELOS ---
@@ -126,11 +133,14 @@
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
-                    // Activar sombras en cada parte del modelo
+                    // Sombras
                     rawModel.traverse((node) => {
                         if (node.isMesh) {
                             node.castShadow = true;
-                            node.receiveShadow = true;
+                            // [OPTIMIZACIÓN 4] Los personajes no necesitan recibir sombras de otros
+                            // personajes en este ángulo, solo proyectarlas sobre el cilindro.
+                            // Poner esto en false ahorra cálculos.
+                            node.receiveShadow = false; 
                         }
                     });
 
@@ -142,14 +152,13 @@
                         mixers.push(mixer);
                     }
 
-                    // Pivot Centering
+                    // Pivot y Posición
                     const pivotWrapper = new THREE.Group();
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     rawModel.position.sub(center);
                     pivotWrapper.add(rawModel);
 
-                    // Transformaciones
                     pivotWrapper.scale.set(ESCALA_SIMBOLOS, ESCALA_SIMBOLOS, ESCALA_SIMBOLOS);
 
                     const angle = (i / NUM_ITEMS_POR_RUEDA) * Math.PI * 2;
@@ -197,6 +206,8 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            // Aseguramos que se mantenga el ratio optimizado al girar el móvil
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         });
 
         animate();

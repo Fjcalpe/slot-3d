@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Pro: Orientación Tangente (Planos)</title>
+    <title>Slot Pro: Texturas Corregidas (Tangente)</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Ajustando a Tangente...</div>
+    <div id="loading">Cargando Texturas...</div>
 
     <script type="importmap">
         {
@@ -35,16 +35,19 @@
         // --- 1. CONFIGURACIÓN ---
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
         
+        // MODO TANGENTE: true = pegados al tambor (planos), false = de pie (radiales)
+        const MODO_TANGENTE = true; 
+
         const NUM_CARRETES = 3;      
         const SEPARACION_CARRETES = 4.5; 
         const NUM_ITEMS_POR_RUEDA = 8; 
         const RADIO_CILINDRO_FONDO = 5.25; 
-        const RADIO_ORBITA_SIMBOLOS = 6.0; // Reducido ligeramente para que parezcan más pegados al tambor
+        const RADIO_ORBITA_SIMBOLOS = 6.0; 
         const TAMANO_MODELO_FINAL = 3.5; 
 
         // --- 2. ESCENA & RENDERER ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x050505);
+        scene.background = new THREE.Color(0x050505); // Fondo casi negro
 
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
         camera.position.set(0, 0, 45); 
@@ -65,8 +68,9 @@
         const clock = new THREE.Clock();
         const mixers = [];
 
-        // --- 3. ILUMINACIÓN ---
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
+        // --- 3. ILUMINACIÓN (AUMENTADA) ---
+        // Aumentamos la luz ambiental para eliminar zonas negras
+        const ambientLight = new THREE.AmbientLight(0xffffff, 2.0); 
         scene.add(ambientLight);
 
         const sunLight = new THREE.DirectionalLight(0xffeebb, 3.5); 
@@ -74,11 +78,6 @@
         sunLight.castShadow = true;
         sunLight.shadow.mapSize.set(2048, 2048);
         sunLight.shadow.bias = -0.0001; 
-        const d = 20;
-        sunLight.shadow.camera.left = -d;
-        sunLight.shadow.camera.right = d;
-        sunLight.shadow.camera.top = d;
-        sunLight.shadow.camera.bottom = -d;
         scene.add(sunLight);
 
         const rimLight = new THREE.DirectionalLight(0x4455ff, 2.0); 
@@ -88,7 +87,7 @@
         // --- 4. CILINDRO FONDO ---
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
         const cylinderMat = new THREE.MeshStandardMaterial({ 
-            color: 0x222222, roughness: 0.4, metalness: 0.6 // Material más oscuro para contraste
+            color: 0x111111, roughness: 0.3, metalness: 0.8 
         });
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
@@ -121,10 +120,7 @@
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
-                    
-                    // Centramos el modelo en su propio eje 0,0,0 local
                     rawModel.position.sub(center);
-                    
                     const maxDim = Math.max(size.x, size.y, size.z);
                     const scaleFactor = TAMANO_MODELO_FINAL / maxDim;
                     
@@ -132,12 +128,33 @@
                     scaleWrapper.add(rawModel);
                     scaleWrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-                    // 2. Sombras y Materiales
+                    // ---------------------------------------------------------
+                    // 2. CORRECCIÓN DE MATERIALES (LA SOLUCIÓN AL GRIS)
+                    // ---------------------------------------------------------
                     rawModel.traverse((node) => {
                         if (node.isMesh) {
                             node.castShadow = true;
                             node.receiveShadow = true;
-                            if(node.material) node.material.envMapIntensity = 1.0; 
+
+                            if (node.material) {
+                                // A. Quitar efecto metálico oscuro
+                                node.material.metalness = 0.0; 
+                                
+                                // B. Rugosidad media para que la luz rebote bien
+                                node.material.roughness = 0.5;
+
+                                // C. Forzar color base a Blanco (para no oscurecer textura)
+                                if (node.material.color) node.material.color.setHex(0xffffff);
+
+                                // D. Asegurar mapa de entorno
+                                node.material.envMapIntensity = 1.0;
+
+                                // E. Forzar interpretación de color sRGB en la textura
+                                if (node.material.map) {
+                                    node.material.map.colorSpace = THREE.SRGBColorSpace;
+                                }
+                                node.material.needsUpdate = true;
+                            }
                         }
                     });
 
@@ -150,52 +167,28 @@
                         mixers.push(mixer);
                     }
 
-                    // =========================================================
-                    // 5. POSICIONAMIENTO Y ORIENTACIÓN (MODO PLANO / TANGENTE)
-                    // =========================================================
-                    
+                    // 4. POSICIONAMIENTO
                     const pivot = new THREE.Group();
                     reelGroup.add(pivot);
 
-                    // Angulo alrededor del cilindro
                     const itemAngle = (i * angleStep);
                     pivot.rotation.x = itemAngle;
                     
                     pivot.add(scaleWrapper);
-
-                    // Desplazamiento hacia afuera (Radio)
                     scaleWrapper.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
 
-                    // --- LÓGICA DE ROTACIÓN PARA "PLANOS" ---
-                    
-                    // Paso A: Resetear rotación
+                    // 5. ORIENTACIÓN TANGENTE
                     scaleWrapper.rotation.set(0, 0, 0);
 
-                    // Paso B: Ajuste Universal
-                    // Para la mayoría de GLTF estándar (Y-Up, Z-Forward):
-                    // Rotation X=0: Quedan "planos" mirando a cámara.
-                    // Rotation Y=0: Miran al frente.
-                    
-                    // AJUSTE: Si tus modelos miran "hacia adentro" (ves su espalda),
-                    // cambia esto a Math.PI (180 grados). Si miran bien, déjalo en 0.
-                    let rotacionY = 0; 
-                    
-                    // --- CORRECCIONES ESPECÍFICAS POR MODELO ---
-                    // Aquí es donde ajustas cada modelo si sale raro.
-                    
-                    if (archivoActual.includes('goku')) {
-                        // Ejemplo: Si Goku sale boca abajo, rotamos Z 180
-                        // scaleWrapper.rotation.z = Math.PI; 
-                    } 
-                    else if (archivoActual.includes('sirena')) {
-                         // Ejemplo: Si la sirena mira para atrás
-                         // rotacionY = Math.PI;
+                    if (MODO_TANGENTE) {
+                        // -90 grados en X para "tumbar" el modelo sobre el cilindro
+                        scaleWrapper.rotation.x = -Math.PI / 2; 
                     }
 
-                    // Aplicar la rotación Y decidida
-                    scaleWrapper.rotation.y = rotacionY;
-
-                    // =========================================================
+                    // --- CORRECCIONES INDIVIDUALES ---
+                    if (archivoActual.includes('goku')) {
+                        // Ajuste manual si es necesario
+                    } 
 
                     itemsLoaded++;
                     if (itemsLoaded === totalItemsToLoad) {
@@ -210,7 +203,7 @@
             crearHilera(r);
         }
 
-        // --- 6. ANIMACIÓN ---
+        // --- 6. LOOP DE ANIMACIÓN ---
         const VELOCIDAD_GIRO = 0.02; 
 
         function animate() {
@@ -218,10 +211,8 @@
             const delta = clock.getDelta();
             for (const mixer of mixers) mixer.update(delta);
             
-            // Giro de los carretes
             reels.forEach((reel, index) => { 
                 if(reel) {
-                    // Pequeña variación de velocidad para realismo
                     reel.rotation.x += VELOCIDAD_GIRO + (index * 0.002); 
                 }
             });

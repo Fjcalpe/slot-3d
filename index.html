@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Sombras y Luces</title>
+    <title>Slot Iluminación Pro</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Cargando Iluminación...</div>
+    <div id="loading">Renderizando Luces...</div>
 
     <script type="importmap">
         {
@@ -35,7 +35,7 @@
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb']; 
         const GIRAR_180_GRADOS = true; 
 
-        // Dimensiones Gigantes
+        // Dimensiones
         const NUM_CARRETES = 3;     
         const SEPARACION_CARRETES = 4.5; 
         const NUM_ITEMS_POR_RUEDA = 7; 
@@ -43,9 +43,9 @@
         const RADIO_ORBITA_SIMBOLOS = 6.75; 
         const ESCALA_SIMBOLOS = 4.5; 
 
-        // --- 2. ESCENA Y RENDER CON SOMBRAS ---
+        // --- 2. ESCENA ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x111111);
+        scene.background = new THREE.Color(0x111111); // Fondo oscuro
 
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
         camera.position.set(0, 0, 45); 
@@ -53,43 +53,47 @@
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         
-        // [NUEVO] ACTIVAR MAPA DE SOMBRAS
+        // Sombras suaves activadas
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Sombras suaves
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         
         document.body.appendChild(renderer.domElement);
 
         const clock = new THREE.Clock();
         const mixers = [];
 
-        // --- 3. ILUMINACIÓN (SOL) ---
-        
-        // Luz ambiente suave (para que las sombras no sean negras absolutas)
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        // --- 3. ILUMINACIÓN MEJORADA ---
+
+        // A. LUZ AMBIENTE (Subida intensidad)
+        // Ilumina todo por igual, evita sombras negras totales
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Antes 0.6
         scene.add(ambientLight);
 
-        // Luz del Sol (DirectionalLight)
-        const sunLight = new THREE.DirectionalLight(0xffddaa, 3); // Tono ligeramente cálido
-        
-        // Posición: Izquierda (-20), Arriba (20), Frente (10)
+        // B. LUZ PRINCIPAL "SOL" (Arriba-Izquierda)
+        // Tono cálido, proyecta sombras, alta intensidad
+        const sunLight = new THREE.DirectionalLight(0xffddaa, 5); // Intensidad subida a 5
         sunLight.position.set(-20, 20, 10); 
-        
-        // [NUEVO] Configurar proyección de sombras
         sunLight.castShadow = true;
         
-        // Ajustar la calidad y el área de la sombra
-        sunLight.shadow.mapSize.width = 2048; // Mayor resolución
+        // Configuración de sombra del sol
+        sunLight.shadow.mapSize.width = 2048;
         sunLight.shadow.mapSize.height = 2048;
-        
-        // Ajustar el "rectángulo" que cubre la luz para abarcar toda la máquina gigante
-        const d = 20;
+        const d = 25; // Área de sombra
         sunLight.shadow.camera.left = -d;
         sunLight.shadow.camera.right = d;
         sunLight.shadow.camera.top = d;
         sunLight.shadow.camera.bottom = -d;
         sunLight.shadow.camera.far = 100;
-
         scene.add(sunLight);
+
+        // C. LUZ DE RELLENO / CONTRALUZ (Abajo-Derecha) - [NUEVA]
+        // Tono azulado frío, intensidad media, SIN sombras
+        const fillLight = new THREE.DirectionalLight(0xddeeff, 2.5); 
+        // Posición: Derecha (+20), Abajo (-15), Frente (+10)
+        fillLight.position.set(20, -15, 10); 
+        fillLight.castShadow = false; // No proyecta sombra, solo ilumina
+        scene.add(fillLight);
+
 
         // --- 4. CILINDRO DE FONDO ---
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
@@ -100,13 +104,10 @@
         });
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
-        
-        // [NUEVO] El cilindro debe RECIBIR la sombra
-        backgroundCylinder.receiveShadow = true; 
-        
+        backgroundCylinder.receiveShadow = true; // Recibe sombras de los iconos
         scene.add(backgroundCylinder);
 
-        // --- 5. CARGA Y CREACIÓN ---
+        // --- 5. CARGA DE MODELOS ---
         const reels = []; 
         const loader = new GLTFLoader();
         let itemsLoaded = 0;
@@ -125,16 +126,15 @@
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
-                    // --- [NUEVO] ACTIVAR SOMBRAS EN EL MODELO ---
-                    // Recorremos todas las partes del modelo 3D
-                    rawModel.traverse(function (node) {
+                    // Activar sombras en cada parte del modelo
+                    rawModel.traverse((node) => {
                         if (node.isMesh) {
-                            node.castShadow = true;    // El símbolo proyecta sombra
-                            node.receiveShadow = true; // El símbolo recibe sombra de otros (opcional)
+                            node.castShadow = true;
+                            node.receiveShadow = true;
                         }
                     });
 
-                    // --- ANIMACIONES ---
+                    // Animaciones
                     if (gltf.animations && gltf.animations.length > 0) {
                         const mixer = new THREE.AnimationMixer(rawModel);
                         const action = mixer.clipAction(gltf.animations[0]);
@@ -142,13 +142,14 @@
                         mixers.push(mixer);
                     }
 
-                    // --- POSICIONAMIENTO ---
+                    // Pivot Centering
                     const pivotWrapper = new THREE.Group();
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     rawModel.position.sub(center);
                     pivotWrapper.add(rawModel);
 
+                    // Transformaciones
                     pivotWrapper.scale.set(ESCALA_SIMBOLOS, ESCALA_SIMBOLOS, ESCALA_SIMBOLOS);
 
                     const angle = (i / NUM_ITEMS_POR_RUEDA) * Math.PI * 2;
@@ -178,7 +179,7 @@
             crearHilera(r);
         }
 
-        // --- 6. LOOP ---
+        // --- 6. ANIMACIÓN ---
         function animate() {
             requestAnimationFrame(animate);
 

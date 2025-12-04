@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Pro: Alineado y Normalizado</title>
+    <title>Slot Corrección Luces y Orientación</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Alineando Rodillos...</div>
+    <div id="loading">Ajustando Orientación...</div>
 
     <script type="importmap">
         {
@@ -37,11 +37,9 @@
         
         const NUM_CARRETES = 3;     
         const SEPARACION_CARRETES = 4.5; 
-        const NUM_ITEMS_POR_RUEDA = 8; // Aumentado a 8 para que sea par y cuadre mejor geométricamente
+        const NUM_ITEMS_POR_RUEDA = 8; 
         const RADIO_CILINDRO_FONDO = 5.25; 
         const RADIO_ORBITA_SIMBOLOS = 6.75; 
-        
-        // TAMAÑO OBJETIVO: Todos los modelos se forzarán a medir esto de alto/ancho
         const TAMANO_MODELO_FINAL = 3.5; 
 
         // --- 2. ESCENA & RENDERER ---
@@ -61,38 +59,56 @@
         
         document.body.appendChild(renderer.domElement);
 
+        // Mapa de entorno (necesario para que los reflejos de la piel/metal se vean bien)
         const pmremGenerator = new THREE.PMREMGenerator(renderer);
         scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
         const clock = new THREE.Clock();
         const mixers = [];
 
-        // --- 3. ILUMINACIÓN ---
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); 
+        // --- 3. ILUMINACIÓN (SOLO LAS 3 PEDIDAS) ---
+
+        // 1. Luz Ambiente (Iluminación base suave)
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
         scene.add(ambientLight);
 
+        // 2. Luz Solar Principal (Proyecta sombras)
         const sunLight = new THREE.DirectionalLight(0xffeebb, 3.5); 
-        sunLight.position.set(-10, 20, 20); 
+        sunLight.position.set(-15, 20, 20); 
         sunLight.castShadow = true;
+        // Configuración de sombras nítidas
         sunLight.shadow.mapSize.set(2048, 2048);
         sunLight.shadow.bias = -0.0001; 
+        const d = 20;
+        sunLight.shadow.camera.left = -d;
+        sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d;
+        sunLight.shadow.camera.bottom = -d;
         scene.add(sunLight);
 
-        const fillLight = new THREE.DirectionalLight(0xcceeff, 2.0); 
-        fillLight.position.set(15, -5, 10); 
-        scene.add(fillLight);
+        // 3. Luz de Relleno/Contraluz (Azulada, Abajo-Derecha)
+        const rimLight = new THREE.DirectionalLight(0x4455ff, 2.0); 
+        rimLight.position.set(15, -10, 5); 
+        scene.add(rimLight);
 
-        // --- 4. CILINDRO FONDO ---
+
+        // --- 4. CILINDRO FONDO (CORREGIDO) ---
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
+        
+        // CORRECCIÓN: Material no metálico (mate) y de color gris medio para que no se vea negro
         const cylinderMat = new THREE.MeshStandardMaterial({ 
-            color: 0x111111, roughness: 0.2, metalness: 0.8 
+            color: 0xaaaaaa,   // Gris claro
+            roughness: 0.8,    // Poco brillo
+            metalness: 0.0     // Nada de metal (evita que se vea negro si no refleja nada)
         });
+        
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
         backgroundCylinder.receiveShadow = true; 
         scene.add(backgroundCylinder);
 
-        // --- 5. CARGA DE MODELOS CON NORMALIZACIÓN ---
+
+        // --- 5. CARGA DE MODELOS ---
         const reels = []; 
         const loader = new GLTFLoader();
         let itemsLoaded = 0;
@@ -100,7 +116,6 @@
 
         function crearHilera(indicePosicion) {
             const reelGroup = new THREE.Group();
-            // Centrar las hileras
             const offsetTotal = (NUM_CARRETES - 1) * SEPARACION_CARRETES;
             const posX = (indicePosicion * SEPARACION_CARRETES) - (offsetTotal / 2);
             
@@ -109,55 +124,46 @@
             reels.push(reelGroup);
 
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
-                // Selecciona archivo rotando en bucle
                 const archivoActual = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
 
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
-                    // A. CENTRAR EL PIVOTE DEL MODELO
-                    // Creamos una caja invisible alrededor del modelo para medirlo
+                    // 1. Centrado matemático del modelo
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
-
-                    // Movemos el modelo para que su centro matemático sea (0,0,0)
                     rawModel.position.sub(center);
 
-                    // B. AUTO-ESCALADO (Soluciona que Sirena no se vea)
-                    // Buscamos cuál es el lado más grande del modelo
+                    // 2. Auto-escalado
                     const maxDim = Math.max(size.x, size.y, size.z);
-                    // Calculamos cuánto hay que escalar para llegar al tamaño deseado
                     const scaleFactor = TAMANO_MODELO_FINAL / maxDim;
                     
-                    // Contenedor para aplicar la escala
                     const scaleWrapper = new THREE.Group();
                     scaleWrapper.add(rawModel);
                     scaleWrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-                    // C. CONFIGURAR MATERIALES Y SOMBRAS
+                    // 3. Sombras
                     rawModel.traverse((node) => {
                         if (node.isMesh) {
                             node.castShadow = true;
                             node.receiveShadow = true;
                             if(node.material) {
                                 node.material.envMapIntensity = 1.0; 
-                                node.material.needsUpdate = true;
                             }
                         }
                     });
 
-                    // D. ANIMACIONES INTERNAS
+                    // 4. Animación
                     if (gltf.animations && gltf.animations.length > 0) {
                         const mixer = new THREE.AnimationMixer(rawModel);
-                        // Reproducir más lento para que no maree
                         const action = mixer.clipAction(gltf.animations[0]);
                         action.timeScale = 0.5; 
                         action.play();
                         mixers.push(mixer);
                     }
 
-                    // E. POSICIONAR EN EL RODILLO
+                    // 5. Posicionamiento y Orientación
                     const finalWrapper = new THREE.Group();
                     finalWrapper.add(scaleWrapper);
 
@@ -166,28 +172,29 @@
                     const z = Math.sin(angle) * RADIO_ORBITA_SIMBOLOS;
                     
                     finalWrapper.position.set(0, y, z); 
-                    finalWrapper.lookAt(0, 0, 0); // Mirar al centro del cilindro
-                    finalWrapper.rotateY(Math.PI); // Corregir orientación
-                    finalWrapper.rotateZ(Math.PI); // Poner cabeza arriba
+                    finalWrapper.lookAt(0, 0, 0); // Mirar al centro
+                    
+                    // CORRECCIÓN DE ROTACIÓN:
+                    // Por defecto, Three.js al mirar al centro (0,0,0) desde arriba deja el objeto "de pie".
+                    // Pero a veces los modelos GLB vienen rotados.
+                    
+                    // Ajuste general (Para Noel, Sirena, Xic)
+                    finalWrapper.rotateY(Math.PI); 
+
+                    // CORRECCIÓN ESPECÍFICA PARA GOKU:
+                    // Si Goku se veía bien cuando los otros se veían mal, significa que Goku tiene el eje invertido.
+                    if (archivoActual.includes('goku')) {
+                         finalWrapper.rotateZ(Math.PI); // Invertimos solo a Goku para que coincida
+                    }
 
                     reelGroup.add(finalWrapper);
 
                     itemsLoaded++;
-                    checkLoadStatus();
+                    if (itemsLoaded === totalItemsToLoad) {
+                        document.getElementById('loading').style.opacity = 0;
+                    }
 
-                }, undefined, (err) => {
-                    console.error(`Error cargando ${archivoActual}:`, err);
-                    itemsLoaded++;
-                    checkLoadStatus();
-                });
-            }
-        }
-
-        function checkLoadStatus() {
-            if (itemsLoaded === totalItemsToLoad) {
-                const loading = document.getElementById('loading');
-                loading.textContent = "¡Listo!";
-                setTimeout(() => { loading.style.opacity = 0; }, 500);
+                }, undefined, (err) => console.error(err));
             }
         }
 
@@ -196,7 +203,6 @@
         }
 
         // --- 6. ANIMACIÓN ---
-        // Velocidad global para mantener sincronía
         const VELOCIDAD_GIRO = 0.02; 
 
         function animate() {
@@ -205,7 +211,6 @@
             const delta = clock.getDelta();
             for (const mixer of mixers) mixer.update(delta);
 
-            // Girar todos exactamente igual
             reels.forEach(reel => {
                 if(reel) reel.rotation.x += VELOCIDAD_GIRO;
             });

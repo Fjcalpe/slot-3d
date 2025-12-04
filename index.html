@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot 3 Rodillos - Ajustes Finales V2</title>
+    <title>Slot Final - Ajuste Global</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Cargando Slot Ajustado...</div>
+    <div id="loading">Cargando Slot...</div>
 
     <script type="importmap">
         {
@@ -31,19 +31,25 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        // --- 1. CONFIGURACIÓN ---
+        // --- 1. CONFIGURACIÓN FÁCIL ---
+        
+        // Archivos
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb']; 
-        
-        const NUM_CARRETES = 3;     
-        // [CAMBIO] Aumentada la separación para que no se toquen (antes 3.5)
-        const SEPARACION_CARRETES = 4.5; 
 
-        // [CAMBIO] Aumentado a 5 para reducir huecos (antes 4)
-        const NUM_ITEMS_POR_RUEDA = 5; 
-        
+        // AJUSTE DE ROTACIÓN:
+        // Si salen todos cabeza abajo, cambia esto a 'false'.
+        // Si salen bien, déjalo en 'true'.
+        const GIRAR_180_GRADOS = true; 
+
+        // Ajustes de la Máquina
+        const NUM_CARRETES = 3;     
+        const SEPARACION_CARRETES = 4.5; // Bien separados
+        const NUM_ITEMS_POR_RUEDA = 5;   // 5 items para reducir huecos
+
+        // Ajustes de Tamaño
         const RADIO_CILINDRO_FONDO = 3.5; 
         const RADIO_ORBITA_SIMBOLOS = 4.5; 
-        const ESCALA_SIMBOLOS = 4.5; // Símbolos gigantes
+        const ESCALA_SIMBOLOS = 4.5; // Gigantes
 
         // --- 2. ESCENA ---
         const scene = new THREE.Scene();
@@ -63,8 +69,7 @@
         dirLight.position.set(0, 10, 15);
         scene.add(dirLight);
 
-        // --- 3. CILINDRO DE FONDO (ESTÁTICO) ---
-        // [AJUSTE] Un poco más largo (18) para compensar la mayor separación de carretes
+        // --- 3. CILINDRO DE FONDO ---
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 18, 64);
         const cylinderMat = new THREE.MeshStandardMaterial({ 
             color: 0xcccccc, roughness: 0.4, metalness: 0.2 
@@ -81,27 +86,26 @@
 
         function crearHilera(indicePosicion) {
             const reelGroup = new THREE.Group();
-            // Cálculo de posición X basado en la nueva separación
             const posX = (indicePosicion - 1) * SEPARACION_CARRETES;
             reelGroup.position.x = posX;
             scene.add(reelGroup);
             reels.push(reelGroup);
 
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
-                // Obtenemos el nombre del archivo actual
                 const archivoActual = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
 
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
-                    // --- SOLUCIÓN PARA ESPACIADO REGULAR (Pivot Centering) ---
+                    // --- CENTRADO (PIVOT FIX) ---
+                    // Esto asegura que la distancia entre ellos sea siempre igual
                     const pivotWrapper = new THREE.Group();
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     rawModel.position.sub(center);
                     pivotWrapper.add(rawModel);
 
-                    // --- POSICIONAMIENTO Y ESCALA ---
+                    // --- ESCALA Y POSICIÓN ---
                     pivotWrapper.scale.set(ESCALA_SIMBOLOS, ESCALA_SIMBOLOS, ESCALA_SIMBOLOS);
 
                     const angle = (i / NUM_ITEMS_POR_RUEDA) * Math.PI * 2;
@@ -109,20 +113,21 @@
                     const z = Math.sin(angle) * RADIO_ORBITA_SIMBOLOS;
                     pivotWrapper.position.set(0, y, z); 
 
-                    // --- [CAMBIO CLAVE] ORIENTACIÓN CONDICIONAL ---
-                    pivotWrapper.lookAt(0, 0, 0); // 1. Apuntar al centro
-                    pivotWrapper.rotateY(Math.PI); // 2. Mirar de frente a la cámara
+                    // --- ORIENTACIÓN UNIFICADA ---
+                    // 1. Apuntar al centro del rodillo
+                    pivotWrapper.lookAt(0, 0, 0); 
+                    
+                    // 2. Girar para mirar de frente a la cámara
+                    pivotWrapper.rotateY(Math.PI); 
 
-                    // 3. CORRECCIÓN DE "CABEZA ABAJO" ESPECÍFICA:
-                    // Si el archivo NO es 'noel.glb', aplicamos el giro de corrección.
-                    // Si ES 'noel.glb', no hacemos este giro extra.
-                    if (!archivoActual.includes('noel.glb')) {
+                    // 3. (OPCIONAL) Girar 180º si están cabeza abajo
+                    // Se aplica a TODOS por igual
+                    if (GIRAR_180_GRADOS) {
                         pivotWrapper.rotateZ(Math.PI);
                     }
 
                     reelGroup.add(pivotWrapper);
 
-                    // Control de carga
                     itemsLoaded++;
                     if (itemsLoaded === totalItemsToLoad) {
                          document.getElementById('loading').style.opacity = 0;

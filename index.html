@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Corrección Luces y Orientación</title>
+    <title>Slot Pro: Orientación Perfecta</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Ajustando Orientación...</div>
+    <div id="loading">Corrigiendo Orientaciones...</div>
 
     <script type="importmap">
         {
@@ -59,24 +59,19 @@
         
         document.body.appendChild(renderer.domElement);
 
-        // Mapa de entorno (necesario para que los reflejos de la piel/metal se vean bien)
         const pmremGenerator = new THREE.PMREMGenerator(renderer);
         scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
         const clock = new THREE.Clock();
         const mixers = [];
 
-        // --- 3. ILUMINACIÓN (SOLO LAS 3 PEDIDAS) ---
-
-        // 1. Luz Ambiente (Iluminación base suave)
+        // --- 3. ILUMINACIÓN ---
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
         scene.add(ambientLight);
 
-        // 2. Luz Solar Principal (Proyecta sombras)
         const sunLight = new THREE.DirectionalLight(0xffeebb, 3.5); 
         sunLight.position.set(-15, 20, 20); 
         sunLight.castShadow = true;
-        // Configuración de sombras nítidas
         sunLight.shadow.mapSize.set(2048, 2048);
         sunLight.shadow.bias = -0.0001; 
         const d = 20;
@@ -86,27 +81,19 @@
         sunLight.shadow.camera.bottom = -d;
         scene.add(sunLight);
 
-        // 3. Luz de Relleno/Contraluz (Azulada, Abajo-Derecha)
         const rimLight = new THREE.DirectionalLight(0x4455ff, 2.0); 
         rimLight.position.set(15, -10, 5); 
         scene.add(rimLight);
 
-
-        // --- 4. CILINDRO FONDO (CORREGIDO) ---
+        // --- 4. CILINDRO FONDO ---
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
-        
-        // CORRECCIÓN: Material no metálico (mate) y de color gris medio para que no se vea negro
         const cylinderMat = new THREE.MeshStandardMaterial({ 
-            color: 0xaaaaaa,   // Gris claro
-            roughness: 0.8,    // Poco brillo
-            metalness: 0.0     // Nada de metal (evita que se vea negro si no refleja nada)
+            color: 0xaaaaaa, roughness: 0.8, metalness: 0.0
         });
-        
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
         backgroundCylinder.receiveShadow = true; 
         scene.add(backgroundCylinder);
-
 
         // --- 5. CARGA DE MODELOS ---
         const reels = []; 
@@ -118,10 +105,12 @@
             const reelGroup = new THREE.Group();
             const offsetTotal = (NUM_CARRETES - 1) * SEPARACION_CARRETES;
             const posX = (indicePosicion * SEPARACION_CARRETES) - (offsetTotal / 2);
-            
             reelGroup.position.x = posX;
             scene.add(reelGroup);
             reels.push(reelGroup);
+
+            // Ángulo entre cada ítem
+            const angleStep = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
 
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
                 const archivoActual = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
@@ -129,28 +118,25 @@
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
-                    // 1. Centrado matemático del modelo
+                    // 1. Centrado y 2. Auto-escalado
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
                     rawModel.position.sub(center);
-
-                    // 2. Auto-escalado
                     const maxDim = Math.max(size.x, size.y, size.z);
                     const scaleFactor = TAMANO_MODELO_FINAL / maxDim;
                     
+                    // scaleWrapper contiene el modelo escalado y centrado
                     const scaleWrapper = new THREE.Group();
                     scaleWrapper.add(rawModel);
                     scaleWrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-                    // 3. Sombras
+                    // 3. Sombras y Materiales
                     rawModel.traverse((node) => {
                         if (node.isMesh) {
                             node.castShadow = true;
                             node.receiveShadow = true;
-                            if(node.material) {
-                                node.material.envMapIntensity = 1.0; 
-                            }
+                            if(node.material) node.material.envMapIntensity = 1.0; 
                         }
                     });
 
@@ -163,31 +149,38 @@
                         mixers.push(mixer);
                     }
 
-                    // 5. Posicionamiento y Orientación
-                    const finalWrapper = new THREE.Group();
-                    finalWrapper.add(scaleWrapper);
+                    // =========================================================
+                    // 5. POSICIONAMIENTO Y ORIENTACIÓN (NUEVO MÉTODO PIVOTE)
+                    // =========================================================
+                    
+                    // A. Crear un pivote en el centro del rodillo (0,0,0)
+                    const pivot = new THREE.Group();
+                    reelGroup.add(pivot);
 
-                    const angle = (i / NUM_ITEMS_POR_RUEDA) * Math.PI * 2;
-                    const y = Math.cos(angle) * RADIO_ORBITA_SIMBOLOS;
-                    const z = Math.sin(angle) * RADIO_ORBITA_SIMBOLOS;
-                    
-                    finalWrapper.position.set(0, y, z); 
-                    finalWrapper.lookAt(0, 0, 0); // Mirar al centro
-                    
-                    // CORRECCIÓN DE ROTACIÓN:
-                    // Por defecto, Three.js al mirar al centro (0,0,0) desde arriba deja el objeto "de pie".
-                    // Pero a veces los modelos GLB vienen rotados.
-                    
-                    // Ajuste general (Para Noel, Sirena, Xic)
-                    finalWrapper.rotateY(Math.PI); 
+                    // B. Calcular el ángulo de este ítem y rotar el pivote
+                    // Se añade un pequeño desfase (Math.PI/2) para que el primer ítem empiece en el frente
+                    const itemAngle = (i * angleStep) + (Math.PI/2);
+                    pivot.rotation.x = itemAngle;
 
-                    // CORRECCIÓN ESPECÍFICA PARA GOKU:
-                    // Si Goku se veía bien cuando los otros se veían mal, significa que Goku tiene el eje invertido.
+                    // C. Añadir el modelo al pivote
+                    pivot.add(scaleWrapper);
+
+                    // D. Desplazar el modelo hacia "afuera" a lo largo del radio
+                    // Al moverlo en Z positivo dentro del pivote rotado, se coloca en la superficie
+                    scaleWrapper.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
+
+                    // E. CORRECCIÓN FINAL DE ORIENTACIÓN INDIVIDUAL
+                    // Ahora todos están en la superficie, pero pueden estar tumbados.
+                    
+                    // Ajuste base para la mayoría de modelos (los pone "de pie" y mirando afuera)
+                    scaleWrapper.rotation.x = -Math.PI / 2;
+                    scaleWrapper.rotation.y = Math.PI;
+                    
+                    // Corrección específica para GOKU (si sigue estando al revés que los otros)
                     if (archivoActual.includes('goku')) {
-                         finalWrapper.rotateZ(Math.PI); // Invertimos solo a Goku para que coincida
+                        scaleWrapper.rotateZ(Math.PI);
                     }
-
-                    reelGroup.add(finalWrapper);
+                    // =========================================================
 
                     itemsLoaded++;
                     if (itemsLoaded === totalItemsToLoad) {
@@ -207,14 +200,9 @@
 
         function animate() {
             requestAnimationFrame(animate);
-
             const delta = clock.getDelta();
             for (const mixer of mixers) mixer.update(delta);
-
-            reels.forEach(reel => {
-                if(reel) reel.rotation.x += VELOCIDAD_GIRO;
-            });
-
+            reels.forEach(reel => { if(reel) reel.rotation.x += VELOCIDAD_GIRO; });
             renderer.render(scene, camera);
         }
 

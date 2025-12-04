@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Iluminación Pro + Goku</title>
+    <title>Slot Pro: Alineado y Normalizado</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #111; }
+        body { margin: 0; overflow: hidden; background-color: #050505; }
         #loading {
             position: absolute; top: 50%; width: 100%; text-align: center;
             color: #ffd700; font-family: sans-serif; font-size: 1.5rem; 
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Cargando Modelos (incluido Goku)...</div>
+    <div id="loading">Alineando Rodillos...</div>
 
     <script type="importmap">
         {
@@ -30,92 +30,69 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        // IMPORTANTE: Entorno de estudio para reflejos realistas
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
         // --- 1. CONFIGURACIÓN ---
-        
-        // >>> AQUÍ ESTÁ EL CAMBIO: Se ha añadido 'goku.glb' a la lista <<<
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
         
-        const GIRAR_180_GRADOS = true; 
-
         const NUM_CARRETES = 3;     
         const SEPARACION_CARRETES = 4.5; 
-        const NUM_ITEMS_POR_RUEDA = 7; 
+        const NUM_ITEMS_POR_RUEDA = 8; // Aumentado a 8 para que sea par y cuadre mejor geométricamente
         const RADIO_CILINDRO_FONDO = 5.25; 
         const RADIO_ORBITA_SIMBOLOS = 6.75; 
-        const ESCALA_SIMBOLOS = 4.5; 
+        
+        // TAMAÑO OBJETIVO: Todos los modelos se forzarán a medir esto de alto/ancho
+        const TAMANO_MODELO_FINAL = 3.5; 
 
         // --- 2. ESCENA & RENDERER ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x050505); // Fondo casi negro para resaltar luces
+        scene.background = new THREE.Color(0x050505);
 
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
         camera.position.set(0, 0, 45); 
         
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio); // Nitidez en móviles
-
-        // --- MEJORA VISUAL 1: Tone Mapping (Look de Cine) ---
+        renderer.setPixelRatio(window.devicePixelRatio);
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.0;
-
-        // Sombras
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         
         document.body.appendChild(renderer.domElement);
 
-        // --- MEJORA VISUAL 2: Entorno de Reflejos (Environment) ---
-        // Esto hace que los metales brillen y reflejen un "estudio" virtual
         const pmremGenerator = new THREE.PMREMGenerator(renderer);
         scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
         const clock = new THREE.Clock();
         const mixers = [];
 
-        // --- 3. ILUMINACIÓN DIRIGIDA ---
-        
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); 
+        // --- 3. ILUMINACIÓN ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); 
         scene.add(ambientLight);
 
-        // Luz Principal (Cálida)
         const sunLight = new THREE.DirectionalLight(0xffeebb, 3.5); 
         sunLight.position.set(-10, 20, 20); 
         sunLight.castShadow = true;
-        
-        // Optimización de sombras para evitar dientes de sierra
-        sunLight.shadow.mapSize.width = 2048;
-        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.mapSize.set(2048, 2048);
         sunLight.shadow.bias = -0.0001; 
-        const d = 15;
-        sunLight.shadow.camera.left = -d;
-        sunLight.shadow.camera.right = d;
-        sunLight.shadow.camera.top = d;
-        sunLight.shadow.camera.bottom = -d;
         scene.add(sunLight);
 
-        // Luz de Relleno (Fría - Rim Light)
         const fillLight = new THREE.DirectionalLight(0xcceeff, 2.0); 
         fillLight.position.set(15, -5, 10); 
         scene.add(fillLight);
 
-        // --- 4. CILINDRO DE FONDO ---
+        // --- 4. CILINDRO FONDO ---
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
-        // Hacemos el cilindro un poco más metálico para probar los reflejos
         const cylinderMat = new THREE.MeshStandardMaterial({ 
-            color: 0xeeeeee, 
-            roughness: 0.3, // Más liso
-            metalness: 0.6  // Más metálico
+            color: 0x111111, roughness: 0.2, metalness: 0.8 
         });
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
         backgroundCylinder.receiveShadow = true; 
         scene.add(backgroundCylinder);
 
-        // --- 5. CARGA DE MODELOS ---
+        // --- 5. CARGA DE MODELOS CON NORMALIZACIÓN ---
         const reels = []; 
         const loader = new GLTFLoader();
         let itemsLoaded = 0;
@@ -123,70 +100,94 @@
 
         function crearHilera(indicePosicion) {
             const reelGroup = new THREE.Group();
-            const posX = (indicePosicion - 1) * SEPARACION_CARRETES;
+            // Centrar las hileras
+            const offsetTotal = (NUM_CARRETES - 1) * SEPARACION_CARRETES;
+            const posX = (indicePosicion * SEPARACION_CARRETES) - (offsetTotal / 2);
+            
             reelGroup.position.x = posX;
             scene.add(reelGroup);
             reels.push(reelGroup);
 
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
-                // El operador % (módulo) se encarga de rotar entre los 4 archivos ahora
+                // Selecciona archivo rotando en bucle
                 const archivoActual = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
 
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
-                    // Activar sombras
+                    // A. CENTRAR EL PIVOTE DEL MODELO
+                    // Creamos una caja invisible alrededor del modelo para medirlo
+                    const box = new THREE.Box3().setFromObject(rawModel);
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+
+                    // Movemos el modelo para que su centro matemático sea (0,0,0)
+                    rawModel.position.sub(center);
+
+                    // B. AUTO-ESCALADO (Soluciona que Sirena no se vea)
+                    // Buscamos cuál es el lado más grande del modelo
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    // Calculamos cuánto hay que escalar para llegar al tamaño deseado
+                    const scaleFactor = TAMANO_MODELO_FINAL / maxDim;
+                    
+                    // Contenedor para aplicar la escala
+                    const scaleWrapper = new THREE.Group();
+                    scaleWrapper.add(rawModel);
+                    scaleWrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+                    // C. CONFIGURAR MATERIALES Y SOMBRAS
                     rawModel.traverse((node) => {
                         if (node.isMesh) {
                             node.castShadow = true;
                             node.receiveShadow = true;
-                            // Forzar actualización de materiales para que tomen el Environment Map
-                            if(node.material) node.material.envMapIntensity = 1.0; 
+                            if(node.material) {
+                                node.material.envMapIntensity = 1.0; 
+                                node.material.needsUpdate = true;
+                            }
                         }
                     });
 
-                    // Animaciones internas
+                    // D. ANIMACIONES INTERNAS
                     if (gltf.animations && gltf.animations.length > 0) {
                         const mixer = new THREE.AnimationMixer(rawModel);
+                        // Reproducir más lento para que no maree
                         const action = mixer.clipAction(gltf.animations[0]);
+                        action.timeScale = 0.5; 
                         action.play();
                         mixers.push(mixer);
                     }
 
-                    // Pivot Centering y Posicionamiento
-                    const pivotWrapper = new THREE.Group();
-                    const box = new THREE.Box3().setFromObject(rawModel);
-                    const center = box.getCenter(new THREE.Vector3());
-                    rawModel.position.sub(center);
-                    pivotWrapper.add(rawModel);
-
-                    pivotWrapper.scale.set(ESCALA_SIMBOLOS, ESCALA_SIMBOLOS, ESCALA_SIMBOLOS);
+                    // E. POSICIONAR EN EL RODILLO
+                    const finalWrapper = new THREE.Group();
+                    finalWrapper.add(scaleWrapper);
 
                     const angle = (i / NUM_ITEMS_POR_RUEDA) * Math.PI * 2;
                     const y = Math.cos(angle) * RADIO_ORBITA_SIMBOLOS;
                     const z = Math.sin(angle) * RADIO_ORBITA_SIMBOLOS;
-                    pivotWrapper.position.set(0, y, z); 
-
-                    pivotWrapper.lookAt(0, 0, 0); 
-                    pivotWrapper.rotateY(Math.PI); 
                     
-                    if (GIRAR_180_GRADOS) {
-                        pivotWrapper.rotateZ(Math.PI);
-                    }
+                    finalWrapper.position.set(0, y, z); 
+                    finalWrapper.lookAt(0, 0, 0); // Mirar al centro del cilindro
+                    finalWrapper.rotateY(Math.PI); // Corregir orientación
+                    finalWrapper.rotateZ(Math.PI); // Poner cabeza arriba
 
-                    reelGroup.add(pivotWrapper);
+                    reelGroup.add(finalWrapper);
 
                     itemsLoaded++;
-                    if (itemsLoaded === totalItemsToLoad) {
-                         document.getElementById('loading').style.opacity = 0;
-                    }
+                    checkLoadStatus();
 
                 }, undefined, (err) => {
-                    console.error(`Error cargando modelo ${archivoActual}:`, err);
-                    // Si falla, restamos para evitar bloqueo
+                    console.error(`Error cargando ${archivoActual}:`, err);
                     itemsLoaded++;
-                    if (itemsLoaded === totalItemsToLoad) document.getElementById('loading').style.opacity = 0;
+                    checkLoadStatus();
                 });
+            }
+        }
+
+        function checkLoadStatus() {
+            if (itemsLoaded === totalItemsToLoad) {
+                const loading = document.getElementById('loading');
+                loading.textContent = "¡Listo!";
+                setTimeout(() => { loading.style.opacity = 0; }, 500);
             }
         }
 
@@ -195,16 +196,19 @@
         }
 
         // --- 6. ANIMACIÓN ---
+        // Velocidad global para mantener sincronía
+        const VELOCIDAD_GIRO = 0.02; 
+
         function animate() {
             requestAnimationFrame(animate);
 
             const delta = clock.getDelta();
             for (const mixer of mixers) mixer.update(delta);
 
-            // Rotación suave de los rodillos
-            if(reels[0]) reels[0].rotation.x += 0.02; 
-            if(reels[1]) reels[1].rotation.x += 0.025; // Velocidad distinta para efecto visual
-            if(reels[2]) reels[2].rotation.x += 0.02; 
+            // Girar todos exactamente igual
+            reels.forEach(reel => {
+                if(reel) reel.rotation.x += VELOCIDAD_GIRO;
+            });
 
             renderer.render(scene, camera);
         }

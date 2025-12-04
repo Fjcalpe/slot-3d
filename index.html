@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Pro: Alta Luminosidad</title>
+    <title>Slot Pro: Carga Pura & Luz Solar</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Encendiendo luces...</div>
+    <div id="loading">Cargando original...</div>
 
     <script type="importmap">
         {
@@ -35,7 +35,11 @@
         // 1. CONFIGURACIÓN
         // =====================================================================
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
-        const AJUSTE_ROTACION_X = 0; // 0 = De pie. 
+        
+        // AJUSTE DE ORIENTACIÓN
+        // 0 = De pie (Radial). 
+        // -Math.PI/2 = Tumbado (Tangente).
+        const AJUSTE_ROTACION_X = 0; 
 
         const NUM_CARRETES = 3;      
         const SEPARACION_CARRETES = 4.5; 
@@ -46,20 +50,22 @@
         const VELOCIDAD_GIRO_BASE = 0.02;
 
         // =====================================================================
-        // 2. ESCENA
+        // 2. ESCENA & CÁMARA
         // =====================================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050505);
 
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, 0, 32); // Zoom ajustado
+        camera.position.set(0, 0, 32); // Cámara cerca
         
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
-        renderer.toneMapping = THREE.NoToneMapping; // Sin filtros oscuros
+        
+        // ToneMapping estándar para no alterar colores
+        renderer.toneMapping = THREE.NoToneMapping; 
         
         document.body.appendChild(renderer.domElement);
 
@@ -67,36 +73,31 @@
         const mixers = [];
 
         // =====================================================================
-        // 3. ILUMINACIÓN (POTENCIADA)
+        // 3. ILUMINACIÓN (RESET A VALORES NORMALES)
         // =====================================================================
         
-        // A. LUZ AMBIENTE MUY FUERTE (La clave para quitar lo oscuro)
-        // Intensidad 3.5 asegura que todo se vea claro.
-        const ambientLight = new THREE.AmbientLight(0xffffff, 3.5); 
+        // A. Luz Ambiente (Base suave)
+        // Valor 1.0: Ni muy oscuro, ni lavado.
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); 
         scene.add(ambientLight);
 
-        // B. LUZ HEMISFÉRICA (Relleno Natural)
-        // Cielo blanco, suelo gris claro. Ayuda a dar volumen sin oscurecer.
-        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 2.0);
-        hemiLight.position.set(0, 20, 0);
-        scene.add(hemiLight);
-
-        // C. SOL (Sombras definidas)
-        const sunLight = new THREE.DirectionalLight(0xffffff, 3.0); 
-        sunLight.position.set(-20, 30, 20); 
+        // B. Luz Solar (Direccional)
+        // Valor 2.0: Fuerza estándar para sol.
+        const sunLight = new THREE.DirectionalLight(0xffffff, 2.0); 
+        sunLight.position.set(-20, 30, 20); // Arriba a la izquierda
         sunLight.castShadow = true;
         sunLight.shadow.mapSize.width = 2048;
         sunLight.shadow.mapSize.height = 2048;
         scene.add(sunLight);
 
         // =====================================================================
-        // 4. CILINDRO DE FONDO (MARFIL)
+        // 4. CILINDRO DE FONDO (MARFIL PLÁSTICO)
         // =====================================================================
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
         const cylinderMat = new THREE.MeshStandardMaterial({ 
             color: 0xfffdd0,   // Marfil
-            roughness: 0.2,    
-            metalness: 0.0,    // Plástico
+            roughness: 0.2,    // Plástico pulido
+            metalness: 0.0,    // No metálico
         });
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
@@ -104,7 +105,7 @@
         scene.add(backgroundCylinder);
 
         // =====================================================================
-        // 5. CARGA DE MODELOS
+        // 5. CARGA DE MODELOS (TAL CUAL SON)
         // =====================================================================
         const reels = []; 
         const loader = new GLTFLoader();
@@ -127,7 +128,7 @@
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
-                    // Escala
+                    // Escala y Centro
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
@@ -139,30 +140,20 @@
                     scaleWrapper.add(rawModel);
                     scaleWrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-                    // --- AJUSTE DE VISIBILIDAD DE MATERIALES ---
+                    // --- SIN MODIFICAR MATERIALES ---
+                    // Solo activamos sombras y corrección de color sRGB en texturas
                     rawModel.traverse((node) => {
-                        if (node.isMesh && node.material) {
+                        if (node.isMesh) {
                             node.castShadow = true;
                             node.receiveShadow = true;
 
-                            // 1. Asegurar color sRGB
-                            if (node.material.map) {
+                            if (node.material && node.material.map) {
+                                // Esto NO cambia el material, solo le dice a Three.js
+                                // cómo interpretar los colores de la imagen (obligatorio)
                                 node.material.map.colorSpace = THREE.SRGBColorSpace;
+                                node.material.needsUpdate = true;
                             }
-
-                            // 2. SEGURO ANTI-OSCURIDAD:
-                            // Si el modelo viene configurado como metálico pero no tenemos mapa de entorno (HDRI),
-                            // se verá negro. Esto fuerza a que se comporte como plástico/goma para verse bien con la luz.
-                            if (node.material.metalness > 0.1) {
-                                node.material.metalness = 0.1; 
-                            }
-                            
-                            // 3. Color Base Blanco (si venía gris, lo aclara)
-                            if (node.material.color) {
-                                node.material.color.setHex(0xffffff);
-                            }
-
-                            node.material.needsUpdate = true;
+                            // Aquí NO tocamos ni metalness, ni roughness, ni color.
                         }
                     });
 
@@ -185,6 +176,7 @@
                     pivot.add(scaleWrapper);
                     scaleWrapper.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
 
+                    // Orientación
                     scaleWrapper.rotation.set(0, 0, 0); 
                     scaleWrapper.rotation.x = AJUSTE_ROTACION_X;
 
@@ -202,7 +194,7 @@
         }
 
         // =====================================================================
-        // 6. LOOP
+        // 6. ANIMACIÓN
         // =====================================================================
         function animate() {
             requestAnimationFrame(animate);

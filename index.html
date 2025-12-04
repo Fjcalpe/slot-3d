@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot con Animaciones GLB</title>
+    <title>Slot Gigante Animado</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Cargando Animaciones...</div>
+    <div id="loading">Cargando Slot XL...</div>
 
     <script type="importmap">
         {
@@ -34,15 +34,20 @@
         // --- 1. CONFIGURACIÓN ---
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb']; 
         
-        // ¿Girar 180º si salen cabeza abajo? (Pon false si todos salen mal)
-        const GIRAR_180_GRADOS = true; 
+        const GIRAR_180_GRADOS = true; // Ajuste de rotación
 
         const NUM_CARRETES = 3;     
         const SEPARACION_CARRETES = 4.5; 
-        const NUM_ITEMS_POR_RUEDA = 5; 
+
+        // [CAMBIO] Añadimos 2 símbolos más para cubrir el nuevo tamaño (5 + 2 = 7)
+        const NUM_ITEMS_POR_RUEDA = 7; 
         
-        const RADIO_CILINDRO_FONDO = 3.5; 
-        const RADIO_ORBITA_SIMBOLOS = 4.5; 
+        // [CAMBIO] Aumentamos diámetro un 50% (3.5 * 1.5 = 5.25)
+        const RADIO_CILINDRO_FONDO = 5.25; 
+
+        // [CAMBIO] Aumentamos órbita un 50% (4.5 * 1.5 = 6.75)
+        const RADIO_ORBITA_SIMBOLOS = 6.75; 
+
         const ESCALA_SIMBOLOS = 4.5; 
 
         // --- 2. ESCENA ---
@@ -50,26 +55,27 @@
         scene.background = new THREE.Color(0x111111);
 
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, 0, 30); 
+        // [CAMBIO] Alejamos la cámara porque la máquina es más grande (antes 30)
+        camera.position.set(0, 0, 45); 
         
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // [NUEVO] Reloj para animaciones
+        // Reloj y Mixers para animación
         const clock = new THREE.Clock();
-        // [NUEVO] Array para guardar los mixers (controladores de animación) de cada personaje
         const mixers = [];
 
         // Luces
         const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
         scene.add(ambientLight);
         const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
-        dirLight.position.set(0, 10, 15);
+        dirLight.position.set(0, 15, 20); // Luz más alta también
         scene.add(dirLight);
 
         // --- 3. CILINDRO DE FONDO ---
-        const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 18, 64);
+        // Aumentamos un poco el largo (22) para asegurar que cubra todo
+        const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
         const cylinderMat = new THREE.MeshStandardMaterial({ 
             color: 0xcccccc, roughness: 0.4, metalness: 0.2 
         });
@@ -96,29 +102,23 @@
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
-                    // --- [NUEVO] ACTIVAR ANIMACIONES ---
-                    // Verificamos si el archivo trae animaciones
+                    // --- ANIMACIONES ---
                     if (gltf.animations && gltf.animations.length > 0) {
-                        // Creamos un Mixer para ESTE modelo específico
                         const mixer = new THREE.AnimationMixer(rawModel);
-                        
-                        // Tomamos la primera animación disponible (index 0)
+                        // Usamos la primera animación disponible
                         const action = mixer.clipAction(gltf.animations[0]);
-                        
-                        // La reproducimos
                         action.play();
-                        
-                        // Guardamos el mixer en nuestra lista global para actualizarlo luego
                         mixers.push(mixer);
                     }
 
-                    // --- LOGICA DE POSICIONAMIENTO ANTERIOR ---
+                    // --- CENTRADO (PIVOT) ---
                     const pivotWrapper = new THREE.Group();
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     rawModel.position.sub(center);
                     pivotWrapper.add(rawModel);
 
+                    // --- ESCALA Y POSICIÓN ---
                     pivotWrapper.scale.set(ESCALA_SIMBOLOS, ESCALA_SIMBOLOS, ESCALA_SIMBOLOS);
 
                     const angle = (i / NUM_ITEMS_POR_RUEDA) * Math.PI * 2;
@@ -126,6 +126,7 @@
                     const z = Math.sin(angle) * RADIO_ORBITA_SIMBOLOS;
                     pivotWrapper.position.set(0, y, z); 
 
+                    // --- ORIENTACIÓN ---
                     pivotWrapper.lookAt(0, 0, 0); 
                     pivotWrapper.rotateY(Math.PI); 
                     
@@ -148,14 +149,13 @@
             crearHilera(r);
         }
 
-        // --- 5. ANIMACIÓN (LOOP) ---
+        // --- 5. LOOP DE ANIMACIÓN ---
         function animate() {
             requestAnimationFrame(animate);
 
-            // [NUEVO] Obtener el tiempo transcurrido (delta)
             const delta = clock.getDelta();
 
-            // [NUEVO] Actualizar todos los mixers (animaciones de personajes)
+            // Actualizar animaciones de personajes (caminar/idle)
             for (const mixer of mixers) {
                 mixer.update(delta);
             }

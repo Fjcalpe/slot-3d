@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Pro: Orientación Perfecta</title>
+    <title>Slot Pro: Orientación Tangente (Planos)</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Corrigiendo Orientaciones...</div>
+    <div id="loading">Ajustando a Tangente...</div>
 
     <script type="importmap">
         {
@@ -109,7 +109,6 @@
             scene.add(reelGroup);
             reels.push(reelGroup);
 
-            // Ángulo entre cada ítem
             const angleStep = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
 
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
@@ -126,12 +125,11 @@
                     const maxDim = Math.max(size.x, size.y, size.z);
                     const scaleFactor = TAMANO_MODELO_FINAL / maxDim;
                     
-                    // scaleWrapper contiene el modelo escalado y centrado
                     const scaleWrapper = new THREE.Group();
                     scaleWrapper.add(rawModel);
                     scaleWrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-                    // 3. Sombras y Materiales
+                    // 3. Sombras
                     rawModel.traverse((node) => {
                         if (node.isMesh) {
                             node.castShadow = true;
@@ -150,36 +148,39 @@
                     }
 
                     // =========================================================
-                    // 5. POSICIONAMIENTO Y ORIENTACIÓN (NUEVO MÉTODO PIVOTE)
+                    // 5. POSICIONAMIENTO Y ORIENTACIÓN (CORREGIDO TANGENTE)
                     // =========================================================
                     
-                    // A. Crear un pivote en el centro del rodillo (0,0,0)
                     const pivot = new THREE.Group();
                     reelGroup.add(pivot);
 
-                    // B. Calcular el ángulo de este ítem y rotar el pivote
-                    // Se añade un pequeño desfase (Math.PI/2) para que el primer ítem empiece en el frente
+                    // Desfase de ángulo para que empiecen centrados
                     const itemAngle = (i * angleStep) + (Math.PI/2);
                     pivot.rotation.x = itemAngle;
-
-                    // C. Añadir el modelo al pivote
                     pivot.add(scaleWrapper);
 
-                    // D. Desplazar el modelo hacia "afuera" a lo largo del radio
-                    // Al moverlo en Z positivo dentro del pivote rotado, se coloca en la superficie
+                    // Desplazamiento hacia afuera (Radio)
                     scaleWrapper.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
 
-                    // E. CORRECCIÓN FINAL DE ORIENTACIÓN INDIVIDUAL
-                    // Ahora todos están en la superficie, pero pueden estar tumbados.
-                    
-                    // Ajuste base para la mayoría de modelos (los pone "de pie" y mirando afuera)
-                    scaleWrapper.rotation.x = -Math.PI / 2;
-                    scaleWrapper.rotation.y = Math.PI;
-                    
-                    // Corrección específica para GOKU (si sigue estando al revés que los otros)
+                    // CORRECCIÓN DE ROTACIÓN: 
+                    // 1. Reseteamos cualquier rotación previa
+                    scaleWrapper.rotation.set(0, 0, 0);
+
+                    // 2. Rotación Y = Math.PI (180º). 
+                    // Esto hace que miren "hacia la cámara" en lugar de "hacia el cilindro".
+                    // Al no tocar X, se quedan "de pie" sobre el radio (tangentes).
+                    scaleWrapper.rotation.y = Math.PI; 
+
+                    // 3. Corrección específica de Goku
+                    // Si Goku aparecía al revés antes, invertimos su eje Z
                     if (archivoActual.includes('goku')) {
                         scaleWrapper.rotateZ(Math.PI);
                     }
+                    
+                    // NOTA: Si siguen saliendo perpendiculares (de pie sobre la superficie),
+                    // cambia la línea de arriba a: scaleWrapper.rotation.x = -Math.PI/2;
+                    // Pero tal y como está ahora (0 en X), deberían quedar planos.
+
                     // =========================================================
 
                     itemsLoaded++;

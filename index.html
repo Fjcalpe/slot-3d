@@ -35,11 +35,11 @@
         // --- 1. CONFIGURACIÓN ---
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
         
-        const NUM_CARRETES = 3;     
+        const NUM_CARRETES = 3;      
         const SEPARACION_CARRETES = 4.5; 
         const NUM_ITEMS_POR_RUEDA = 8; 
         const RADIO_CILINDRO_FONDO = 5.25; 
-        const RADIO_ORBITA_SIMBOLOS = 6.75; 
+        const RADIO_ORBITA_SIMBOLOS = 6.0; // Reducido ligeramente para que parezcan más pegados al tambor
         const TAMANO_MODELO_FINAL = 3.5; 
 
         // --- 2. ESCENA & RENDERER ---
@@ -88,7 +88,7 @@
         // --- 4. CILINDRO FONDO ---
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
         const cylinderMat = new THREE.MeshStandardMaterial({ 
-            color: 0xaaaaaa, roughness: 0.8, metalness: 0.0
+            color: 0x222222, roughness: 0.4, metalness: 0.6 // Material más oscuro para contraste
         });
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
@@ -117,11 +117,14 @@
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
-                    // 1. Centrado y 2. Auto-escalado
+                    // 1. Centrado y Auto-escalado
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
+                    
+                    // Centramos el modelo en su propio eje 0,0,0 local
                     rawModel.position.sub(center);
+                    
                     const maxDim = Math.max(size.x, size.y, size.z);
                     const scaleFactor = TAMANO_MODELO_FINAL / maxDim;
                     
@@ -129,7 +132,7 @@
                     scaleWrapper.add(rawModel);
                     scaleWrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-                    // 3. Sombras
+                    // 2. Sombras y Materiales
                     rawModel.traverse((node) => {
                         if (node.isMesh) {
                             node.castShadow = true;
@@ -138,7 +141,7 @@
                         }
                     });
 
-                    // 4. Animación
+                    // 3. Animación
                     if (gltf.animations && gltf.animations.length > 0) {
                         const mixer = new THREE.AnimationMixer(rawModel);
                         const action = mixer.clipAction(gltf.animations[0]);
@@ -148,38 +151,49 @@
                     }
 
                     // =========================================================
-                    // 5. POSICIONAMIENTO Y ORIENTACIÓN (CORREGIDO TANGENTE)
+                    // 5. POSICIONAMIENTO Y ORIENTACIÓN (MODO PLANO / TANGENTE)
                     // =========================================================
                     
                     const pivot = new THREE.Group();
                     reelGroup.add(pivot);
 
-                    // Desfase de ángulo para que empiecen centrados
-                    const itemAngle = (i * angleStep) + (Math.PI/2);
+                    // Angulo alrededor del cilindro
+                    const itemAngle = (i * angleStep);
                     pivot.rotation.x = itemAngle;
+                    
                     pivot.add(scaleWrapper);
 
                     // Desplazamiento hacia afuera (Radio)
                     scaleWrapper.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
 
-                    // CORRECCIÓN DE ROTACIÓN: 
-                    // 1. Reseteamos cualquier rotación previa
+                    // --- LÓGICA DE ROTACIÓN PARA "PLANOS" ---
+                    
+                    // Paso A: Resetear rotación
                     scaleWrapper.rotation.set(0, 0, 0);
 
-                    // 2. Rotación Y = Math.PI (180º). 
-                    // Esto hace que miren "hacia la cámara" en lugar de "hacia el cilindro".
-                    // Al no tocar X, se quedan "de pie" sobre el radio (tangentes).
-                    scaleWrapper.rotation.y = Math.PI; 
-
-                    // 3. Corrección específica de Goku
-                    // Si Goku aparecía al revés antes, invertimos su eje Z
-                    if (archivoActual.includes('goku')) {
-                        scaleWrapper.rotateZ(Math.PI);
-                    }
+                    // Paso B: Ajuste Universal
+                    // Para la mayoría de GLTF estándar (Y-Up, Z-Forward):
+                    // Rotation X=0: Quedan "planos" mirando a cámara.
+                    // Rotation Y=0: Miran al frente.
                     
-                    // NOTA: Si siguen saliendo perpendiculares (de pie sobre la superficie),
-                    // cambia la línea de arriba a: scaleWrapper.rotation.x = -Math.PI/2;
-                    // Pero tal y como está ahora (0 en X), deberían quedar planos.
+                    // AJUSTE: Si tus modelos miran "hacia adentro" (ves su espalda),
+                    // cambia esto a Math.PI (180 grados). Si miran bien, déjalo en 0.
+                    let rotacionY = 0; 
+                    
+                    // --- CORRECCIONES ESPECÍFICAS POR MODELO ---
+                    // Aquí es donde ajustas cada modelo si sale raro.
+                    
+                    if (archivoActual.includes('goku')) {
+                        // Ejemplo: Si Goku sale boca abajo, rotamos Z 180
+                        // scaleWrapper.rotation.z = Math.PI; 
+                    } 
+                    else if (archivoActual.includes('sirena')) {
+                         // Ejemplo: Si la sirena mira para atrás
+                         // rotacionY = Math.PI;
+                    }
+
+                    // Aplicar la rotación Y decidida
+                    scaleWrapper.rotation.y = rotacionY;
 
                     // =========================================================
 
@@ -203,7 +217,15 @@
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
             for (const mixer of mixers) mixer.update(delta);
-            reels.forEach(reel => { if(reel) reel.rotation.x += VELOCIDAD_GIRO; });
+            
+            // Giro de los carretes
+            reels.forEach((reel, index) => { 
+                if(reel) {
+                    // Pequeña variación de velocidad para realismo
+                    reel.rotation.x += VELOCIDAD_GIRO + (index * 0.002); 
+                }
+            });
+            
             renderer.render(scene, camera);
         }
 

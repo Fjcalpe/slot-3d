@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Slot Machine: Noel, Sirena y Xic</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: sans-serif; }
+        
+        #ui-container {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        button {
+            pointer-events: auto;
+            background: linear-gradient(to bottom, #ff5252, #b71c1c); /* Rojo navideño */
+            color: white;
+            border: 2px solid #fff;
+            padding: 15px 50px;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            transition: transform 0.1s;
+            text-transform: uppercase;
+        }
+
+        button:active { transform: scale(0.95); }
+        button:disabled { filter: grayscale(1); cursor: not-allowed; }
+
+        #status {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px black;
+        }
+    </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="status">Cargando a Noel y amigos...</div>
+    <div id="ui-container">
+        <button id="btnSpin" disabled>¡JUGAR!</button>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // --- CONFIGURACIÓN ---
+        const REEL_COUNT = 3;        
+        const RADIUS = 2.8;          // Radio del círculo (si los modelos se solapan, aumenta esto)
+        const REEL_GAP = 3.0;        // Separación entre rodillos
+        
+        // TAMAÑO DE LOS MODELOS
+        // Cambia esto si tus modelos salen muy grandes o pequeños.
+        // 0.5 es la mitad del tamaño original, 2.0 es el doble, etc.
+        const GLOBAL_SCALE = 0.8; 
+
+        // TUS ARCHIVOS (Se repiten para llenar el rodillo)
+        const MODEL_FILES = [
+            './noel.glb',
+            './sirena.glb',
+            './xic.glb',
+            './noel.glb',
+            './sirena.glb',
+            './xic.glb'
+        ];
+        
+        const SYMBOLS_PER_REEL = MODEL_FILES.length;
+
+        // --- VARIABLES GLOBALES ---
+        let scene, camera, renderer;
+        const reels = []; 
+        const loadedModels = []; // Array para guardar los modelos base
+        let isSpinning = false;
+
+        init();
+
+        function init() {
+            // 1. ESCENA
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111); // Fondo oscuro
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 0, 14); // Cámara un poco más lejos para ver bien
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // 2. LUCES (Importante para ver bien los colores de los GLB)
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); // Luz ambiental fuerte
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(5, 10, 7);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            // 3. CARGAR TUS ARCHIVOS
+            loadAssets();
+
+            // Evento Botón
+            document.getElementById('btnSpin').addEventListener('click', startSpin);
+        }
+
+        async function loadAssets() {
+            const loader = new GLTFLoader();
+            
+            // Cargamos los archivos uno por uno
+            // Nota: Aunque repetimos nombres en la lista, cargaremos cada archivo único solo una vez para optimizar, 
+            // pero para simplificar este código cargaremos la lista tal cual.
+            
+            let loadedCount = 0;
+
+            for (let i = 0; i < MODEL_FILES.length; i++) {
+                const url = MODEL_FILES[i];
+                
+                try {
+                    const gltf = await loader.loadAsync(url);
+                    const model = gltf.scene;
+
+                    // Ajustes al modelo
+                    model.scale.set(GLOBAL_SCALE, GLOBAL_SCALE, GLOBAL_SCALE);
+                    
+                    // Centrar el modelo (por si el artista no lo centró en 0,0,0)
+                    // Esto es opcional pero ayuda mucho
+                    const box = new THREE.Box3().setFromObject(model);
+                    const center = box.getCenter(new THREE.Vector3());
+                    model.position.sub(center); // Restar el centro para moverlo al origen
+
+                    // Sombras
+                    model.traverse(c => { if(c.isMesh) c.castShadow = true; });
+
+                    loadedModels.push(model);
+                    loadedCount++;
+                    console.log(`Cargado: ${url}`);
+
+                } catch (error) {
+                    console.error(`Error cargando ${url}:`, error);
+                    // Si falla, metemos un cubo rojo de emergencia para que no se rompa el juego
+                    const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial({color:0xff0000}));
+                    loadedModels.push(mesh);
+                }
+            }
+
+            if (loadedCount > 0) {
+                createMachine();
+                document.getElementById('status').innerText = "¡Listo!";
+                document.getElementById('btnSpin').disabled = false;
+                animate();
+            }
+        }
+
+        function createMachine() {
+            const angleStep = (Math.PI * 2) / SYMBOLS_PER_REEL;
+
+            for (let i = 0; i < REEL_COUNT; i++) {
+                const reelGroup = new THREE.Group();
+                reelGroup.position.x = (i - 1) * REEL_GAP; // -REEL_GAP, 0, +REEL_GAP
+
+                for (let j = 0; j < SYMBOLS_PER_REEL; j++) {
+                    // Clonamos el modelo cargado
+                    const symbol = loadedModels[j].clone();
+
+                    // Matemáticas circulares
+                    const theta = j * angleStep;
+                    
+                    // Posición en el cilindro
+                    symbol.position.y = RADIUS * Math.cos(theta);
+                    symbol.position.z = RADIUS * Math.sin(theta) * -1;
+
+                    // Rotación para que miren "hacia afuera"
+                    symbol.rotation.x = theta;
+
+                    // CORRECCIÓN DE ROTACIÓN EXTRA:
+                    // A veces los modelos vienen "acostados". Si tus personajes miran al suelo,
+                    // descomenta la siguiente línea y prueba valores (Math.PI / 2, etc.)
+                    // symbol.rotation.x += Math.PI / 2; 
+
+                    reelGroup.add(symbol);
+                }
+
+                scene.add(reelGroup);
+                
+                reels.push({
+                    mesh: reelGroup,
+                    speed: 0,
+                    targetRotation: 0,
+                    isStopping: false
+                });
+            }
+        }
+
+        function startSpin() {
+            if (isSpinning) return;
+            isSpinning = true;
+            document.getElementById('status').innerText = "¡Girando!";
+            document.getElementById('btnSpin').disabled = true;
+
+            reels.forEach((reel, index) => {
+                reel.speed = 0.3 + Math.random() * 0.1; 
+                reel.isStopping = false;
+                
+                // Paradas secuenciales
+                setTimeout(() => {
+                    stopReel(index);
+                }, 2000 + (index * 500)); 
+            });
+        }
+
+        function stopReel(index) {
+            const reel = reels[index];
+            reel.isStopping = true;
+            const angleStep = (Math.PI * 2) / SYMBOLS_PER_REEL;
+            
+            // Decidir aleatoriamente dónde parar (simulación de azar)
+            const randomOffset = Math.floor(Math.random() * SYMBOLS_PER_REEL);
+            
+            const currentRotation = reel.mesh.rotation.x;
+            const rawTarget = currentRotation + (Math.PI * 4); // Mínimo 2 vueltas más
+            
+            // Calcular el ángulo exacto del slot
+            // El ajuste + (angleStep * randomOffset) asegura que pare en un símbolo aleatorio
+            reel.targetRotation = Math.ceil(rawTarget / angleStep) * angleStep + (angleStep * randomOffset);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            let stoppedCount = 0;
+
+            reels.forEach(reel => {
+                if (!reel.isStopping) {
+                    reel.mesh.rotation.x += reel.speed;
+                } else {
+                    // Frenado suave
+                    const delta = (reel.targetRotation - reel.mesh.rotation.x);
+                    reel.mesh.rotation.x += delta * 0.05;
+
+                    if (Math.abs(delta) < 0.005) {
+                        reel.mesh.rotation.x = reel.targetRotation;
+                        stoppedCount++;
+                    }
+                }
+            });
+
+            if (stoppedCount === REEL_COUNT && isSpinning) {
+                isSpinning = false;
+                document.getElementById('btnSpin').disabled = false;
+                document.getElementById('status').innerText = "¡Resultado!";
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>

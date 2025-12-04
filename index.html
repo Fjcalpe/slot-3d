@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Pro: Plástico Marfil y Luz Solar</title>
+    <title>Slot Pro: Alta Luminosidad</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Configurando Escena...</div>
+    <div id="loading">Encendiendo luces...</div>
 
     <script type="importmap">
         {
@@ -30,15 +30,12 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        // NOTA: Hemos eliminado RoomEnvironment para quitar el "efecto cine"
 
         // =====================================================================
         // 1. CONFIGURACIÓN
         // =====================================================================
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
-        
-        // ORIENTACIÓN: 0 = De pie (Radial). Si los quieres tumbados usa -Math.PI/2
-        const AJUSTE_ROTACION_X = 0; 
+        const AJUSTE_ROTACION_X = 0; // 0 = De pie. 
 
         const NUM_CARRETES = 3;      
         const SEPARACION_CARRETES = 4.5; 
@@ -49,23 +46,20 @@
         const VELOCIDAD_GIRO_BASE = 0.02;
 
         // =====================================================================
-        // 2. ESCENA Y CÁMARA (ZOOM APLICADO)
+        // 2. ESCENA
         // =====================================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050505);
 
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
-        // ACERCAMOS CÁMARA: De 45 a 32 para llenar la pantalla
-        camera.position.set(0, 0, 32); 
+        camera.position.set(0, 0, 32); // Zoom ajustado
         
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
-        
-        // ToneMapping simple para colores naturales sin filtros de cine
-        renderer.toneMapping = THREE.NoToneMapping; 
+        renderer.toneMapping = THREE.NoToneMapping; // Sin filtros oscuros
         
         document.body.appendChild(renderer.domElement);
 
@@ -73,48 +67,44 @@
         const mixers = [];
 
         // =====================================================================
-        // 3. ILUMINACIÓN (SIN HDRI, SOLO LUCES DIRECTAS)
+        // 3. ILUMINACIÓN (POTENCIADA)
         // =====================================================================
         
-        // A. Luz Ambiental (Global) - Ilumina todo uniformemente
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.2); 
+        // A. LUZ AMBIENTE MUY FUERTE (La clave para quitar lo oscuro)
+        // Intensidad 3.5 asegura que todo se vea claro.
+        const ambientLight = new THREE.AmbientLight(0xffffff, 3.5); 
         scene.add(ambientLight);
 
-        // B. Luz Solar (Directional) - Arriba a la Izquierda
-        const sunLight = new THREE.DirectionalLight(0xffffff, 2.5); 
-        // Posición: X=-20 (Izquierda), Y=30 (Arriba), Z=20 (Frente)
+        // B. LUZ HEMISFÉRICA (Relleno Natural)
+        // Cielo blanco, suelo gris claro. Ayuda a dar volumen sin oscurecer.
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 2.0);
+        hemiLight.position.set(0, 20, 0);
+        scene.add(hemiLight);
+
+        // C. SOL (Sombras definidas)
+        const sunLight = new THREE.DirectionalLight(0xffffff, 3.0); 
         sunLight.position.set(-20, 30, 20); 
         sunLight.castShadow = true;
-        
-        // Configuración de sombras para que sean nítidas
         sunLight.shadow.mapSize.width = 2048;
         sunLight.shadow.mapSize.height = 2048;
-        sunLight.shadow.bias = -0.0005;
         scene.add(sunLight);
 
-        // C. Luz de Relleno (Frontal suave) para que no haya zonas negras totales
-        const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
-        fillLight.position.set(0, 0, 20);
-        scene.add(fillLight);
-
         // =====================================================================
-        // 4. CILINDRO DE FONDO (MARFIL PLÁSTICO PULIDO)
+        // 4. CILINDRO DE FONDO (MARFIL)
         // =====================================================================
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
-        
         const cylinderMat = new THREE.MeshStandardMaterial({ 
-            color: 0xfffdd0,   // Color Crema / Marfil
-            roughness: 0.2,    // Bajo: bastante liso/pulido
-            metalness: 0.0,    // Plástico (no metal)
+            color: 0xfffdd0,   // Marfil
+            roughness: 0.2,    
+            metalness: 0.0,    // Plástico
         });
-        
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
         backgroundCylinder.receiveShadow = true; 
         scene.add(backgroundCylinder);
 
         // =====================================================================
-        // 5. CARGA DE MODELOS (RESPETANDO MATERIALES ORIGINALES)
+        // 5. CARGA DE MODELOS
         // =====================================================================
         const reels = []; 
         const loader = new GLTFLoader();
@@ -137,7 +127,7 @@
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
-                    // Escala y Centro
+                    // Escala
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
@@ -149,18 +139,34 @@
                     scaleWrapper.add(rawModel);
                     scaleWrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-                    // Ajuste de Materiales (Solo textura sRGB)
+                    // --- AJUSTE DE VISIBILIDAD DE MATERIALES ---
                     rawModel.traverse((node) => {
-                        if (node.isMesh) {
+                        if (node.isMesh && node.material) {
                             node.castShadow = true;
                             node.receiveShadow = true;
-                            if (node.material && node.material.map) {
+
+                            // 1. Asegurar color sRGB
+                            if (node.material.map) {
                                 node.material.map.colorSpace = THREE.SRGBColorSpace;
-                                node.material.needsUpdate = true;
                             }
+
+                            // 2. SEGURO ANTI-OSCURIDAD:
+                            // Si el modelo viene configurado como metálico pero no tenemos mapa de entorno (HDRI),
+                            // se verá negro. Esto fuerza a que se comporte como plástico/goma para verse bien con la luz.
+                            if (node.material.metalness > 0.1) {
+                                node.material.metalness = 0.1; 
+                            }
+                            
+                            // 3. Color Base Blanco (si venía gris, lo aclara)
+                            if (node.material.color) {
+                                node.material.color.setHex(0xffffff);
+                            }
+
+                            node.material.needsUpdate = true;
                         }
                     });
 
+                    // Animación interna
                     if (gltf.animations && gltf.animations.length > 0) {
                         const mixer = new THREE.AnimationMixer(rawModel);
                         const action = mixer.clipAction(gltf.animations[0]);
@@ -169,7 +175,7 @@
                         mixers.push(mixer);
                     }
 
-                    // Posicionamiento Radial
+                    // Posicionamiento
                     const pivot = new THREE.Group();
                     reelGroup.add(pivot);
 
@@ -179,7 +185,6 @@
                     pivot.add(scaleWrapper);
                     scaleWrapper.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
 
-                    // Orientación final
                     scaleWrapper.rotation.set(0, 0, 0); 
                     scaleWrapper.rotation.x = AJUSTE_ROTACION_X;
 
@@ -197,7 +202,7 @@
         }
 
         // =====================================================================
-        // 6. ANIMACIÓN
+        // 6. LOOP
         // =====================================================================
         function animate() {
             requestAnimationFrame(animate);

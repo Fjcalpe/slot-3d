@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot 3 Rodillos Navidad</title>
+    <title>Slot 3 Rodillos - Espaciado Correcto</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Cargando Slot Navideño...</div>
+    <div id="loading">Cargando Slot...</div>
 
     <script type="importmap">
         {
@@ -31,26 +31,28 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        // --- 1. CONFIGURACIÓN ---
+        // --- 1. CONFIGURACIÓN CLAVE ---
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb']; 
         
-        // Ajustes Visuales
-        const NUM_CARRETES = 3;     // 3 Hileras
-        const SEPARACION_CARRETES = 6; // Distancia entre la hilera izq, centro y der
-        const NUM_ITEMS_POR_RUEDA = 9; 
+        const NUM_CARRETES = 3;     
+        const SEPARACION_CARRETES = 6; 
+
+        // --- SOLUCIÓN AL SOLAPAMIENTO ---
+        // Hemos reducido de 9 a 6. Con símbolos tan grandes, 
+        // necesitamos menos items para que haya espacio entre ellos.
+        const NUM_ITEMS_POR_RUEDA = 6; 
         
         const RADIO_CILINDRO_FONDO = 3.5; 
         const RADIO_ORBITA_SIMBOLOS = 4.2; 
-        
-        // Aumentado un 50% (antes 1.5 -> ahora 2.25)
-        const ESCALA_SIMBOLOS = 2.25; 
+        const ESCALA_SIMBOLOS = 2.25; // Símbolos grandes
 
         // --- 2. ESCENA ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x111111);
 
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, 0, 24); // Cámara más lejos para ver los 3 rodillos
+        // Cámara un poco más lejos para ver bien el conjunto
+        camera.position.set(0, 0, 26); 
         
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -60,93 +62,78 @@
         const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
         scene.add(ambientLight);
         const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-        dirLight.position.set(0, 5, 10);
+        dirLight.position.set(0, 8, 12); // Luz un poco más alta
         scene.add(dirLight);
 
         // --- 3. CILINDRO DE FONDO (ESTÁTICO) ---
-        // Lo hacemos más largo (25 unidades) para cubrir los 3 rodillos
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 25, 64);
         const cylinderMat = new THREE.MeshStandardMaterial({ 
-            color: 0xcccccc, 
-            roughness: 0.4, 
-            metalness: 0.2 
+            color: 0xcccccc, roughness: 0.4, metalness: 0.2 
         });
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
-        backgroundCylinder.rotation.z = Math.PI / 2; // Horizontal
+        backgroundCylinder.rotation.z = Math.PI / 2;
         scene.add(backgroundCylinder);
 
-        // --- 4. CREACIÓN DE LOS 3 RODILLOS (Hileras) ---
-        const reels = []; // Guardamos los grupos aquí para animarlos por separado
+        // --- 4. CREACIÓN DE RODILLOS ---
+        const reels = []; 
         const loader = new GLTFLoader();
+        let itemsLoaded = 0;
+        const totalItemsToLoad = NUM_CARRETES * NUM_ITEMS_POR_RUEDA;
 
-        // Función para crear una hilera de símbolos
         function crearHilera(indicePosicion) {
             const reelGroup = new THREE.Group();
-            
-            // Calculamos la posición X: Izquierda (-1), Centro (0), Derecha (1)
-            // (indicePosicion - 1) nos da -1, 0, 1
             const posX = (indicePosicion - 1) * SEPARACION_CARRETES;
             reelGroup.position.x = posX;
-            
             scene.add(reelGroup);
             reels.push(reelGroup);
 
-            // Llenar la hilera con símbolos
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
                 const archivo = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
 
                 loader.load(archivo, (gltf) => {
-                    const model = gltf.scene.clone(); // Clonamos para poder reusar el mismo archivo
-                    
+                    const model = gltf.scene.clone(); 
                     model.scale.set(ESCALA_SIMBOLOS, ESCALA_SIMBOLOS, ESCALA_SIMBOLOS);
 
-                    // Posición Circular
+                    // Distribución circular uniforme
                     const angle = (i / NUM_ITEMS_POR_RUEDA) * Math.PI * 2;
                     const y = Math.cos(angle) * RADIO_ORBITA_SIMBOLOS;
                     const z = Math.sin(angle) * RADIO_ORBITA_SIMBOLOS;
-                    model.position.set(0, y, z); // X es 0 relativo al grupo del rodillo
+                    model.position.set(0, y, z); 
 
-                    // --- ROTACIÓN CRÍTICA (CORRECCIÓN) ---
-                    // 1. Mirar al centro del eje
+                    // Orientación correcta
                     model.lookAt(0, 0, 0);
-                    
-                    // 2. Girar 180 grados en Y para mirar a la cámara (de frente)
-                    model.rotateY(Math.PI);
-                    
-                    // 3. Girar 180 grados en Z si aparecen cabeza abajo
-                    // (Descomenta esto si siguen saliendo al revés)
-                    model.rotateZ(Math.PI); 
+                    model.rotateY(Math.PI); // Mirar al frente
+                    model.rotateZ(Math.PI); // Corregir cabeza abajo
 
                     reelGroup.add(model);
+
+                    // Control de carga
+                    itemsLoaded++;
+                    if (itemsLoaded === totalItemsToLoad) {
+                         document.getElementById('loading').style.opacity = 0;
+                    }
 
                 }, undefined, (err) => console.error(err));
             }
         }
 
-        // Crear las 3 hileras
         for(let r = 0; r < NUM_CARRETES; r++) {
             crearHilera(r);
         }
-
-        // Ocultar carga tras unos segundos (estimación)
-        setTimeout(() => {
-            document.getElementById('loading').style.opacity = 0;
-        }, 2000);
 
         // --- 5. ANIMACIÓN ---
         function animate() {
             requestAnimationFrame(animate);
 
-            // Giramos cada rodillo. 
-            // Podemos darles velocidades ligeramente distintas si quieres más realismo.
-            if(reels[0]) reels[0].rotation.x -= 0.02; // Izquierda
-            if(reels[1]) reels[1].rotation.x -= 0.02; // Centro
-            if(reels[2]) reels[2].rotation.x -= 0.02; // Derecha
+            // --- DIRECCIÓN DE GIRO ---
+            // Usamos '+' para que los símbolos "bajen" por la pantalla
+            if(reels[0]) reels[0].rotation.x += 0.02; 
+            if(reels[1]) reels[1].rotation.x += 0.02; 
+            if(reels[2]) reels[2].rotation.x += 0.02; 
 
             renderer.render(scene, camera);
         }
 
-        // Resize
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();

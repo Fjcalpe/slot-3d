@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Pro: Final (Color Vivo)</title>
+    <title>Slot Pro: Materiales Originales</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Cargando Slot 3D...</div>
+    <div id="loading">Cargando Materiales Originales...</div>
 
     <script type="importmap">
         {
@@ -33,12 +33,19 @@
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
         // =====================================================================
-        // 1. CONFIGURACIÓN GENERAL
+        // 1. CONFIGURACIÓN
         // =====================================================================
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
         
-        // true = Pegados al tambor (tangente) / false = De pie (radial)
-        const MODO_TANGENTE = true; 
+        // --- AJUSTE DE ORIENTACIÓN ---
+        // 0 = De pie (Radial)
+        // -Math.PI/2 = Tumbado boca arriba (Tangente 1)
+        // Math.PI/2  = Tumbado boca abajo (Tangente 2)
+        // Math.PI    = De cabeza
+        
+        // Si antes salían "de cabeza contra el cilindro" con -PI/2, probamos con 0 (De pie)
+        // o ajusta este valor si los quieres tumbados.
+        const AJUSTE_ROTACION_X = 0; 
 
         const NUM_CARRETES = 3;      
         const SEPARACION_CARRETES = 4.5; 
@@ -49,7 +56,7 @@
         const VELOCIDAD_GIRO_BASE = 0.02;
 
         // =====================================================================
-        // 2. ESCENA, CÁMARA Y RENDERER
+        // 2. ESCENA
         // =====================================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050505);
@@ -61,15 +68,15 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         
-        // Mapeo de tono para evitar que se quemen los blancos, pero manteniendo color
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.2; 
+        // Usamos un ToneMapping más neutro para respetar los colores originales
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        renderer.toneMappingExposure = 2.0; 
+        
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         
         document.body.appendChild(renderer.domElement);
 
-        // Entorno para reflejos sutiles
         const pmremGenerator = new THREE.PMREMGenerator(renderer);
         scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
@@ -77,44 +84,41 @@
         const mixers = [];
 
         // =====================================================================
-        // 3. ILUMINACIÓN (AJUSTADA PARA COLORES VIVOS)
+        // 3. ILUMINACIÓN (Equilibrada)
         // =====================================================================
-        
-        // A. Luz Ambiental Potente (Base para que no haya zonas negras)
-        const ambientLight = new THREE.AmbientLight(0xffffff, 2.5); 
+        // Luz ambiental blanca pura para resaltar texturas
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5); 
         scene.add(ambientLight);
 
-        // B. Luz Solar (Sombras principales)
-        const sunLight = new THREE.DirectionalLight(0xffeebb, 3.0); 
-        sunLight.position.set(-15, 20, 20); 
+        const sunLight = new THREE.DirectionalLight(0xffffff, 2.0); 
+        sunLight.position.set(-10, 20, 20); 
         sunLight.castShadow = true;
-        sunLight.shadow.mapSize.set(2048, 2048); 
         scene.add(sunLight);
 
-        // C. Luz Frontal de Relleno (Vital para ver las texturas de frente)
-        const fillLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        fillLight.position.set(0, 0, 20);
-        scene.add(fillLight);
-
-        // D. Luz de borde (Rim Light) para separar del fondo
-        const rimLight = new THREE.DirectionalLight(0x4455ff, 2.0); 
-        rimLight.position.set(15, -10, -5); 
-        scene.add(rimLight);
+        // Luz frontal suave
+        const frontLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        frontLight.position.set(0, 0, 20);
+        scene.add(frontLight);
 
         // =====================================================================
-        // 4. CILINDRO DE FONDO (TAMBOR)
+        // 4. CILINDRO DE FONDO (Corregido)
         // =====================================================================
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
+        
+        // Material gris medio (0x444444) y MENOS metálico para que no se vea negro
         const cylinderMat = new THREE.MeshStandardMaterial({ 
-            color: 0x111111, roughness: 0.3, metalness: 0.8 
+            color: 0x444444,  
+            roughness: 0.4, 
+            metalness: 0.2    // Bajamos metalness para que capture luz difusa
         });
+        
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
         backgroundCylinder.receiveShadow = true; 
         scene.add(backgroundCylinder);
 
         // =====================================================================
-        // 5. CARGA DE MODELOS
+        // 5. CARGA DE MODELOS (Respetando Materiales GLB)
         // =====================================================================
         const reels = []; 
         const loader = new GLTFLoader();
@@ -123,7 +127,6 @@
 
         function crearHilera(indicePosicion) {
             const reelGroup = new THREE.Group();
-            // Centrar los carretes en la pantalla
             const offsetTotal = (NUM_CARRETES - 1) * SEPARACION_CARRETES;
             const posX = (indicePosicion * SEPARACION_CARRETES) - (offsetTotal / 2);
             reelGroup.position.x = posX;
@@ -138,12 +141,11 @@
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
-                    // --- A. Centrado y Auto-escalado ---
+                    // 1. Escala y Centro
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
-                    rawModel.position.sub(center); // Centrar en 0,0,0 local
-                    
+                    rawModel.position.sub(center);
                     const maxDim = Math.max(size.x, size.y, size.z);
                     const scaleFactor = TAMANO_MODELO_FINAL / maxDim;
                     
@@ -151,43 +153,33 @@
                     scaleWrapper.add(rawModel);
                     scaleWrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-                    // --- B. LIMPIEZA DE MATERIALES (SOLUCIÓN AL GRIS) ---
-                    // Recorremos cada parte del modelo para arreglar su piel
+                    // ---------------------------------------------------------
+                    // 2. PROCESADO DE MATERIALES (SIN REEMPLAZO)
+                    // ---------------------------------------------------------
                     rawModel.traverse((node) => {
-                        if (node.isMesh && node.material) {
+                        if (node.isMesh) {
                             node.castShadow = true;
                             node.receiveShadow = true;
 
-                            // 1. Rescatamos la textura original
-                            const texturaOriginal = node.material.map;
-
-                            if (texturaOriginal) {
-                                // Corrección de color de la textura
-                                texturaOriginal.colorSpace = THREE.SRGBColorSpace;
+                            // Aquí NO creamos materiales nuevos. Usamos los que vienen.
+                            if (node.material) {
+                                // CORRECCIÓN CRÍTICA: Decirle a Three.js que la textura es sRGB
+                                if (node.material.map) {
+                                    node.material.map.colorSpace = THREE.SRGBColorSpace;
+                                }
                                 
-                                // 2. CREAMOS UN MATERIAL NUEVO
-                                // Ignoramos el material viejo que causaba el gris y creamos uno limpio
-                                const nuevoMaterial = new THREE.MeshStandardMaterial({
-                                    map: texturaOriginal,       // Ponemos la foto original
-                                    color: 0xffffff,            // Blanco puro base
-                                    roughness: 0.4,             // Un poco de brillo plástico
-                                    metalness: 0.0,             // CERO metal (esto elimina lo oscuro)
-                                    emissive: 0x000000,
-                                    vertexColors: false         // Desactivar colores de vértices corruptos
-                                });
+                                // Opcional: Si el modelo es MUY oscuro por defecto,
+                                // aseguramos que el envMapIntensity sea 1
+                                node.material.envMapIntensity = 1.0;
 
-                                // Reemplazamos el material
-                                node.material = nuevoMaterial;
-                            } else {
-                                // Si no tiene textura, simplemente limpiamos el existente
-                                node.material.color.setHex(0xffffff);
-                                node.material.metalness = 0.0;
-                                node.material.roughness = 0.5;
+                                // NO tocamos roughness ni metalness. 
+                                // Se verán tal cual fueron diseñados en el software 3D.
+                                node.material.needsUpdate = true;
                             }
                         }
                     });
 
-                    // --- C. Animación interna del GLB ---
+                    // 3. Animación
                     if (gltf.animations && gltf.animations.length > 0) {
                         const mixer = new THREE.AnimationMixer(rawModel);
                         const action = mixer.clipAction(gltf.animations[0]);
@@ -196,63 +188,54 @@
                         mixers.push(mixer);
                     }
 
-                    // --- D. Posicionamiento en el Carrete ---
+                    // 4. Posición
                     const pivot = new THREE.Group();
                     reelGroup.add(pivot);
 
-                    // Ángulo alrededor del cilindro
                     const itemAngle = (i * angleStep);
                     pivot.rotation.x = itemAngle;
                     
                     pivot.add(scaleWrapper);
-                    // Distancia del centro (Radio)
                     scaleWrapper.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
 
-                    // --- E. Orientación Final (Plano/Tangente) ---
+                    // 5. Orientación
                     scaleWrapper.rotation.set(0, 0, 0); // Reset
+                    
+                    // Aplicamos la rotación configurada arriba
+                    scaleWrapper.rotation.x = AJUSTE_ROTACION_X;
 
-                    if (MODO_TANGENTE) {
-                        // Rotar -90º en X para tumbarlo sobre el cilindro
-                        scaleWrapper.rotation.x = -Math.PI / 2; 
+                    // --- Correcciones Específicas ---
+                    if (archivoActual.includes('goku')) {
+                        // Ejemplo: Si Goku sale mirando hacia atrás, rótalo 180 en Y
+                        // scaleWrapper.rotation.y = Math.PI;
                     }
 
-                    // Control de carga
                     itemsLoaded++;
                     if (itemsLoaded === totalItemsToLoad) {
                         document.getElementById('loading').style.opacity = 0;
                     }
 
-                }, undefined, (err) => console.error("Error cargando modelo:", err));
+                }, undefined, (err) => console.error(err));
             }
         }
 
-        // Crear las 3 hileras
         for(let r = 0; r < NUM_CARRETES; r++) {
             crearHilera(r);
         }
 
-        // =====================================================================
-        // 6. ANIMACIÓN
-        // =====================================================================
         function animate() {
             requestAnimationFrame(animate);
-            
             const delta = clock.getDelta();
-            // Actualizar animaciones internas de los personajes
             for (const mixer of mixers) mixer.update(delta);
             
-            // Girar los carretes
             reels.forEach((reel, index) => { 
                 if(reel) {
-                    // Velocidad base + pequeña variación por carrete
                     reel.rotation.x += VELOCIDAD_GIRO_BASE + (index * 0.003); 
                 }
             });
-            
             renderer.render(scene, camera);
         }
 
-        // Ajuste de ventana
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();

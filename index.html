@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Final - Ajuste Global</title>
+    <title>Slot con Animaciones GLB</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; }
         #loading {
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <div id="loading">Cargando Slot...</div>
+    <div id="loading">Cargando Animaciones...</div>
 
     <script type="importmap">
         {
@@ -31,25 +31,19 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        // --- 1. CONFIGURACIÓN FÁCIL ---
-        
-        // Archivos
+        // --- 1. CONFIGURACIÓN ---
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb']; 
-
-        // AJUSTE DE ROTACIÓN:
-        // Si salen todos cabeza abajo, cambia esto a 'false'.
-        // Si salen bien, déjalo en 'true'.
+        
+        // ¿Girar 180º si salen cabeza abajo? (Pon false si todos salen mal)
         const GIRAR_180_GRADOS = true; 
 
-        // Ajustes de la Máquina
         const NUM_CARRETES = 3;     
-        const SEPARACION_CARRETES = 4.5; // Bien separados
-        const NUM_ITEMS_POR_RUEDA = 5;   // 5 items para reducir huecos
-
-        // Ajustes de Tamaño
+        const SEPARACION_CARRETES = 4.5; 
+        const NUM_ITEMS_POR_RUEDA = 5; 
+        
         const RADIO_CILINDRO_FONDO = 3.5; 
         const RADIO_ORBITA_SIMBOLOS = 4.5; 
-        const ESCALA_SIMBOLOS = 4.5; // Gigantes
+        const ESCALA_SIMBOLOS = 4.5; 
 
         // --- 2. ESCENA ---
         const scene = new THREE.Scene();
@@ -61,6 +55,11 @@
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
+
+        // [NUEVO] Reloj para animaciones
+        const clock = new THREE.Clock();
+        // [NUEVO] Array para guardar los mixers (controladores de animación) de cada personaje
+        const mixers = [];
 
         // Luces
         const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
@@ -78,7 +77,7 @@
         backgroundCylinder.rotation.z = Math.PI / 2;
         scene.add(backgroundCylinder);
 
-        // --- 4. CREACIÓN DE RODILLOS ---
+        // --- 4. CARGA Y CREACIÓN ---
         const reels = []; 
         const loader = new GLTFLoader();
         let itemsLoaded = 0;
@@ -97,15 +96,29 @@
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
 
-                    // --- CENTRADO (PIVOT FIX) ---
-                    // Esto asegura que la distancia entre ellos sea siempre igual
+                    // --- [NUEVO] ACTIVAR ANIMACIONES ---
+                    // Verificamos si el archivo trae animaciones
+                    if (gltf.animations && gltf.animations.length > 0) {
+                        // Creamos un Mixer para ESTE modelo específico
+                        const mixer = new THREE.AnimationMixer(rawModel);
+                        
+                        // Tomamos la primera animación disponible (index 0)
+                        const action = mixer.clipAction(gltf.animations[0]);
+                        
+                        // La reproducimos
+                        action.play();
+                        
+                        // Guardamos el mixer en nuestra lista global para actualizarlo luego
+                        mixers.push(mixer);
+                    }
+
+                    // --- LOGICA DE POSICIONAMIENTO ANTERIOR ---
                     const pivotWrapper = new THREE.Group();
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     rawModel.position.sub(center);
                     pivotWrapper.add(rawModel);
 
-                    // --- ESCALA Y POSICIÓN ---
                     pivotWrapper.scale.set(ESCALA_SIMBOLOS, ESCALA_SIMBOLOS, ESCALA_SIMBOLOS);
 
                     const angle = (i / NUM_ITEMS_POR_RUEDA) * Math.PI * 2;
@@ -113,15 +126,9 @@
                     const z = Math.sin(angle) * RADIO_ORBITA_SIMBOLOS;
                     pivotWrapper.position.set(0, y, z); 
 
-                    // --- ORIENTACIÓN UNIFICADA ---
-                    // 1. Apuntar al centro del rodillo
                     pivotWrapper.lookAt(0, 0, 0); 
-                    
-                    // 2. Girar para mirar de frente a la cámara
                     pivotWrapper.rotateY(Math.PI); 
-
-                    // 3. (OPCIONAL) Girar 180º si están cabeza abajo
-                    // Se aplica a TODOS por igual
+                    
                     if (GIRAR_180_GRADOS) {
                         pivotWrapper.rotateZ(Math.PI);
                     }
@@ -141,10 +148,19 @@
             crearHilera(r);
         }
 
-        // --- 5. ANIMACIÓN ---
+        // --- 5. ANIMACIÓN (LOOP) ---
         function animate() {
             requestAnimationFrame(animate);
 
+            // [NUEVO] Obtener el tiempo transcurrido (delta)
+            const delta = clock.getDelta();
+
+            // [NUEVO] Actualizar todos los mixers (animaciones de personajes)
+            for (const mixer of mixers) {
+                mixer.update(delta);
+            }
+
+            // Girar los rodillos
             if(reels[0]) reels[0].rotation.x += 0.02; 
             if(reels[1]) reels[1].rotation.x += 0.02; 
             if(reels[2]) reels[2].rotation.x += 0.02; 

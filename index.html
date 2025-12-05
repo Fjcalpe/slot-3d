@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: GTAO (Real-time AO)</title>
+    <title>Slot Pro: Coin Fountain</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -91,18 +91,14 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
-        
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
         import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
         import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-        
-        // --- IMPORTAMOS GTAO (AMBIENT OCCLUSION) ---
-        import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 
         // =====================================================================
-        // CONFIGURACIÓN
+        // CONFIGURACIÓN GENERAL
         // =====================================================================
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
         const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
@@ -117,10 +113,19 @@
         const STOP_DELAY_MS = 300; 
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
-        
         const Z_NORMAL = 28; 
         const Z_VR = 42;     
 
+        // =====================================================================
+        // CONFIGURACIÓN DE PARTÍCULAS (MONEDAS)
+        // =====================================================================
+        const COIN_COUNT = 150;      // Cantidad de monedas
+        const COIN_GRAVITY = 25.0;   // Fuerza de gravedad
+        const COIN_BLAST_FORCE = 18; // Fuerza hacia arriba
+        const COIN_SPREAD = 6.0;     // Dispersión lateral
+        const COIN_SCALE = 0.8;      // Tamaño de la moneda
+
+        // Variables de estado
         let machineIsSpinning = false;
         const spinButton = document.getElementById('spin-btn');
         const resultText = document.getElementById('result-text');
@@ -133,9 +138,25 @@
         }));
 
         const symbolMasters = {};
+        
+        // Variables para las monedas
+        let coinInstancedMesh;
+        const dummy = new THREE.Object3D(); // Helper para matrices
+        const coinsData = []; // Array para guardar velocidad y posición de cada moneda
+
+        // Inicializar datos de monedas
+        for(let i=0; i<COIN_COUNT; i++) {
+            coinsData.push({
+                position: new THREE.Vector3(),
+                velocity: new THREE.Vector3(),
+                rotation: new THREE.Euler(),
+                rotSpeed: new THREE.Vector3(),
+                active: false
+            });
+        }
 
         // =====================================================================
-        // RENDERER & VR
+        // RENDERER
         // =====================================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x000000); 
@@ -145,9 +166,10 @@
         const renderer = new THREE.WebGLRenderer({ antialias: true }); 
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio); 
-        
         renderer.shadowMap.enabled = true; 
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
+        renderer.shadowMap.width = 2048;
+        renderer.shadowMap.height = 2048;
         renderer.toneMapping = THREE.NoToneMapping; 
         
         document.body.appendChild(renderer.domElement);
@@ -156,30 +178,16 @@
         effectVR.eyeSeparation = 0.005; 
         effectVR.setSize(window.innerWidth, window.innerHeight);
         
-        // --- POST-PROCESADO (GTAO + FXAA + OUTPUT) ---
         const composer = new EffectComposer(renderer);
-        
-        // 1. Render Base
         const renderPass = new RenderPass(scene, camera);
         composer.addPass(renderPass);
-
-        // 2. GTAO (Ambient Occlusion en Tiempo Real)
-        // NOTA: Esto añade sombras de contacto en las grietas.
-        const gtaoPass = new GTAOPass(scene, camera, window.innerWidth, window.innerHeight);
-        gtaoPass.output = GTAOPass.OUTPUT.Default; // Usar Default para mezclar con la escena
-        // Ajustes de Calidad vs Rendimiento
-        gtaoPass.blendIntensity = 1.0;  // Fuerza de la sombra
-        gtaoPass.scale = 1.0;           // Escala del efecto
-        composer.addPass(gtaoPass);
         
-        // 3. FXAA (Antialias)
         const fxaaPass = new ShaderPass(FXAAShader);
         const pixelRatio = renderer.getPixelRatio();
         fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio);
         fxaaPass.material.uniforms['resolution'].value.y = 1 / (window.innerHeight * pixelRatio);
         composer.addPass(fxaaPass);
 
-        // 4. Output Correcto
         const outputPass = new OutputPass();
         composer.addPass(outputPass);
 
@@ -188,53 +196,49 @@
         // =====================================================================
         // LUCES
         // =====================================================================
-        
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); 
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
         scene.add(ambientLight);
 
-        const sunLight = new THREE.DirectionalLight(0xffffff, 1.5); 
-        sunLight.position.set(-15, 25, 40); 
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1.8); 
+        sunLight.position.set(-10, 30, 20); 
         sunLight.castShadow = true;
-        
-        const d = 25; 
+        const d = 30; 
         sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
         sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
         sunLight.shadow.mapSize.set(2048, 2048);
         sunLight.shadow.bias = -0.0005; 
+        sunLight.shadow.radius = 2; 
         scene.add(sunLight);
 
         const loader = new GLTFLoader();
         const textureLoader = new THREE.TextureLoader();
         const reels = []; 
+        const clock = new THREE.Clock();
 
         async function init() {
             try {
-                // 1. CARGAR CUBEMAP
                 loadingText.innerText = "Cargando Entorno...";
                 const cubemapTexture = await new Promise((resolve, reject) => {
                     textureLoader.load('cubemap.jpg', resolve, undefined, reject);
                 });
                 
                 cubemapTexture.mapping = THREE.EquirectangularReflectionMapping;
-                
                 const pmremGenerator = new THREE.PMREMGenerator(renderer);
                 pmremGenerator.compileEquirectangularShader();
                 const envMap = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
-                
                 scene.environment = envMap; 
-                
                 cubemapTexture.dispose();
                 pmremGenerator.dispose();
 
-                // 2. CARGAR ESTRUCTURA
                 loadingText.innerText = "Cargando Máquina...";
                 await loadStructure();
 
-                // 3. CARGAR SÍMBOLOS
+                loadingText.innerText = "Cargando Monedas...";
+                await loadCoinSystem();
+
                 loadingText.innerText = "Cargando Símbolos...";
                 await loadSymbolMasters();
 
-                // 4. MONTAR JUEGO
                 loadingText.innerText = "Iniciando...";
                 for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
 
@@ -248,10 +252,137 @@
             }
         }
 
-        function setupModel(node) {
+        // --- SISTEMA DE MONEDAS ---
+        function loadCoinSystem() {
+            return new Promise((resolve, reject) => {
+                loader.load('moneda.glb', (gltf) => {
+                    let coinGeometry, coinMaterial;
+                    
+                    // Buscar la malla de la moneda dentro del GLB
+                    gltf.scene.traverse((node) => {
+                        if (node.isMesh) {
+                            coinGeometry = node.geometry;
+                            coinMaterial = node.material;
+                        }
+                    });
+
+                    if (coinGeometry && coinMaterial) {
+                        // Asegurar que brille
+                        if (coinMaterial.map) coinMaterial.map.colorSpace = THREE.SRGBColorSpace;
+                        coinMaterial.metalness = 1.0;
+                        coinMaterial.roughness = 0.2; // Oro pulido
+
+                        // Crear InstancedMesh para renderizar 100 monedas de golpe
+                        coinInstancedMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, COIN_COUNT);
+                        coinInstancedMesh.castShadow = true;
+                        coinInstancedMesh.receiveShadow = true;
+                        
+                        // Inicialmente esconderlas (escala 0)
+                        for (let i = 0; i < COIN_COUNT; i++) {
+                            dummy.position.set(0, -100, 0);
+                            dummy.scale.set(0, 0, 0);
+                            dummy.updateMatrix();
+                            coinInstancedMesh.setMatrixAt(i, dummy.matrix);
+                        }
+                        coinInstancedMesh.instanceMatrix.needsUpdate = true;
+                        scene.add(coinInstancedMesh);
+                    }
+                    resolve();
+                }, undefined, reject);
+            });
+        }
+
+        function spawnCoins() {
+            // Reiniciar y lanzar todas las monedas
+            for(let i=0; i < COIN_COUNT; i++) {
+                const data = coinsData[i];
+                data.active = true;
+                
+                // Posición inicial: Fila central (Y=0), dispersión en X y Z
+                data.position.set(
+                    (Math.random() - 0.5) * COIN_SPREAD * 2, // X aleatorio
+                    -2.0,                                    // Y un poco abajo para salir disparada
+                    (Math.random() - 0.5) * 4.0              // Z profundidad aleatoria
+                );
+
+                // Velocidad: Disparo hacia arriba con variación
+                data.velocity.set(
+                    (Math.random() - 0.5) * 8.0,             // X: dispersión lateral
+                    COIN_BLAST_FORCE + (Math.random() * 10), // Y: fuerza explosiva variable
+                    (Math.random() - 0.5) * 5.0 + 8.0        // Z: ligero impulso hacia cámara
+                );
+
+                // Rotación aleatoria inicial
+                data.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+                
+                // Velocidad de giro (Tumble)
+                data.rotSpeed.set(
+                    (Math.random() - 0.5) * 10,
+                    (Math.random() - 0.5) * 10,
+                    (Math.random() - 0.5) * 10
+                );
+            }
+        }
+
+        function updateCoins(delta) {
+            if (!coinInstancedMesh) return;
+            
+            let activeCount = 0;
+
+            for(let i=0; i < COIN_COUNT; i++) {
+                const data = coinsData[i];
+
+                if (data.active) {
+                    // Física simple
+                    data.velocity.y -= COIN_GRAVITY * delta; // Gravedad
+                    data.position.addScaledVector(data.velocity, delta);
+
+                    // Rotación
+                    data.rotation.x += data.rotSpeed.x * delta;
+                    data.rotation.y += data.rotSpeed.y * delta;
+                    data.rotation.z += data.rotSpeed.z * delta;
+
+                    // Actualizar matriz
+                    dummy.position.copy(data.position);
+                    dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
+                    dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE);
+                    dummy.updateMatrix();
+                    coinInstancedMesh.setMatrixAt(i, dummy.matrix);
+
+                    // Desactivar si cae fuera de pantalla
+                    if (data.position.y < -30) {
+                        data.active = false;
+                        // Esconder
+                        dummy.scale.set(0,0,0);
+                        dummy.updateMatrix();
+                        coinInstancedMesh.setMatrixAt(i, dummy.matrix);
+                    } else {
+                        activeCount++;
+                    }
+                }
+            }
+
+            if (activeCount > 0 || coinInstancedMesh.count > 0) {
+                coinInstancedMesh.instanceMatrix.needsUpdate = true;
+            }
+        }
+
+        // --- SETUP ESTRUCTURA ---
+        function setupStructure(node) {
             if (node.isMesh) {
-                node.receiveShadow = true;
                 node.castShadow = true;
+                node.receiveShadow = true; 
+                if (node.material && node.material.map) {
+                    node.material.map.colorSpace = THREE.SRGBColorSpace;
+                }
+            }
+        }
+
+        // --- SETUP SÍMBOLOS ---
+        function setupSymbol(node) {
+             if (node.isMesh) {
+                node.castShadow = true;
+                node.receiveShadow = false; 
                 if (node.material && node.material.map) {
                     node.material.map.colorSpace = THREE.SRGBColorSpace;
                 }
@@ -262,7 +393,7 @@
             return new Promise((resolve, reject) => {
                 loader.load('cilindro.glb', (gltf) => {
                     const model = gltf.scene;
-                    model.traverse(setupModel);
+                    model.traverse(setupStructure);
                     scene.add(model);
                     resolve();
                 }, undefined, reject);
@@ -298,13 +429,12 @@
                 rawModel.rotation.x = AJUSTE_ROTACION_X;
                 pivot.add(rawModel);
                 reelGroup.add(pivot);
-
-                rawModel.traverse(setupModel);
+                rawModel.traverse(setupSymbol);
             }
         }
 
         // =====================================================================
-        // GAMEPLAY & ANIMACIÓN
+        // LÓGICA DE JUEGO
         // =====================================================================
         
         function spinMachine() {
@@ -345,10 +475,14 @@
             resultText.innerText = resultados.join("  -  ");
             resultText.classList.add('show');
             
+            // --- CONDICIÓN DE PREMIO ---
             if (resultados[0] === resultados[1] && resultados[1] === resultados[2]) {
                 resultText.style.borderColor = "#00ff00";
                 resultText.style.color = "#00ff00";
                 resultText.innerText += " ¡PREMIO!";
+                
+                // ¡LANZAR MONEDAS!
+                spawnCoins();
             }
         }
 
@@ -366,6 +500,12 @@
 
         function animate() {
             requestAnimationFrame(animate);
+            
+            const delta = clock.getDelta(); // Necesario para física suave
+            
+            // Actualizar monedas
+            updateCoins(delta);
+
             let allReelsIdle = true;
 
             reels.forEach((reel, i) => {
@@ -395,7 +535,6 @@
             }
 
             if (isVRMode) {
-                // En VR normalmente NO activamos GTAO porque es muy pesado para doble renderizado
                 effectVR.render(scene, camera);
             } else {
                 composer.render();
@@ -413,9 +552,6 @@
             const pixelRatio = renderer.getPixelRatio();
             fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio);
             fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
-            
-            // Ajustar tamaño del GTAO al cambiar pantalla
-            if (gtaoPass) gtaoPass.setSize(width, height);
 
             const aspect = width / height;
             camera.aspect = aspect;

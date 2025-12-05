@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Matte Cylinder</title>
+    <title>Slot Pro: Final Integration</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -56,7 +56,7 @@
 </head>
 <body>
 
-    <div id="loading">Ajustando Materiales...</div>
+    <div id="loading">Cargando Slot Machine...</div>
     
     <div id="result-panel">
         <div id="result-text">LISTO</div>
@@ -150,28 +150,36 @@
         // =====================================================================
         const loader = new GLTFLoader();
 
-        // CILINDRO CUSTOM (Material Ajustado: Mate)
+        // ---------------------------------------------------------------------
+        // CARGA DE LA ESTRUCTURA COMPLETA (Cilindro + Carcasa)
+        // ---------------------------------------------------------------------
         loader.load('cilindro.glb', (gltf) => {
-            const cylinder = gltf.scene;
-            cylinder.rotation.set(0, 0, 0); 
-            cylinder.traverse((node) => {
+            const model = gltf.scene;
+            model.rotation.set(0, 0, 0); 
+
+            model.traverse((node) => {
                 if (node.isMesh) {
+                    // 1. Sombras: Interacción total entre carcasa y cilindro
                     node.receiveShadow = true;
-                    node.castShadow = false;
+                    node.castShadow = true; 
+                    
                     if (node.material) {
-                        // --- AJUSTE DE BRILLO ---
-                        node.material.roughness = 0.45;   // Más rugoso (menos espejo)
-                        node.material.metalness = 0.0;    // Cero metal (plástico puro)
-                        node.material.envMapIntensity = 0.2; // Intensidad de reflejo muy baja
+                        // 2. Reflejos Unificados:
+                        // Respetamos los materiales originales (mate/metal) de Blender.
+                        // Solo aplicamos el HDRI con intensidad baja para unificar.
+                        node.material.envMapIntensity = 0.2; 
                         
+                        // 3. Color:
                         if (node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
                     }
                 }
             });
-            scene.add(cylinder);
+            scene.add(model);
         });
 
-        // CARRETES
+        // ---------------------------------------------------------------------
+        // CARGA DE SÍMBOLOS
+        // ---------------------------------------------------------------------
         const reels = []; 
         let itemsLoaded = 0;
         const totalItemsToLoad = NUM_CARRETES * NUM_ITEMS_POR_RUEDA;
@@ -312,7 +320,7 @@
         }
 
         // =====================================================================
-        // AJUSTE DE CÁMARA INTELIGENTE
+        // AJUSTE DE CÁMARA INTELIGENTE (RESPONSIVE)
         // =====================================================================
         function adjustCamera() {
             const width = window.innerWidth;

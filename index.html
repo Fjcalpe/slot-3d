@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Optimized & Reflections</title>
+    <title>Slot Pro: Pure Blender Materials</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -76,7 +76,6 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        // RoomEnvironment ya no es necesario porque usaremos el cubemap.jpg
 
         // =====================================================================
         // CONFIGURACIÓN
@@ -94,7 +93,6 @@
         const STOP_DELAY_MS = 300; 
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
-        
         const BASE_CAMERA_Z = 34;
 
         let machineIsSpinning = false;
@@ -106,15 +104,13 @@
             mode: 'IDLE', velocity: 0, targetAngle: 0
         }));
 
-        // Map para almacenar los modelos maestros cargados una sola vez
         const symbolMasters = {};
 
         // =====================================================================
-        // RENDERER & ESCENA
+        // RENDERER
         // =====================================================================
         const scene = new THREE.Scene();
-        // Un color de fondo oscuro mientras carga el entorno
-        scene.background = new THREE.Color(0x111111); 
+        scene.background = new THREE.Color(0x050505); 
         
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
         
@@ -123,20 +119,27 @@
         renderer.setPixelRatio(window.devicePixelRatio); 
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
-        renderer.toneMapping = THREE.ACESFilmicToneMapping; // Tonalidad más cinematográfica para reflejos
-        renderer.toneMappingExposure = 1.0;
+        
+        // TONE MAPPING: Esencial para evitar el "quemado"
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 0.9; // Valor < 1.0 reduce la sobreexposición
         
         document.body.appendChild(renderer.domElement);
 
         // =====================================================================
-        // LUCES
+        // LUCES (Ajustadas para no quemar)
         // =====================================================================
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // Luz ambiental más tenue para que destaquen los reflejos
+        
+        // Luz de relleno muy suave
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3); 
         scene.add(ambientLight);
 
-        const sunLight = new THREE.DirectionalLight(0xffffff, 2.5); 
+        // Luz principal (Sol) reducida
+        const sunLight = new THREE.DirectionalLight(0xffffff, 0.8); 
         sunLight.position.set(-15, 25, 40); 
         sunLight.castShadow = true;
+        
+        // Configuración de sombras
         const d = 22; 
         sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
         sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
@@ -144,56 +147,48 @@
         sunLight.shadow.mapSize.set(2048, 2048);
         scene.add(sunLight);
 
-        // =====================================================================
-        // CARGA DE RECURSOS ASÍNCRONA (OPTIMIZADA)
-        // =====================================================================
         const loader = new GLTFLoader();
         const textureLoader = new THREE.TextureLoader();
         const reels = []; 
-        const mixers = []; // Nota: Los mixers no funcionarán automáticamente con .clone() simple. Los desactivamos por ahora para esta optimización.
 
         async function init() {
             try {
-                // 1. CARGAR CUBEMAP (REFLEJOS)
+                // 1. CARGAR CUBEMAP
                 loadingText.innerText = "Cargando Entorno...";
                 const cubemapTexture = await new Promise((resolve, reject) => {
                     textureLoader.load('cubemap.jpg', resolve, undefined, reject);
                 });
                 
-                // Procesar el cubemap para iluminación PBR realista
                 cubemapTexture.mapping = THREE.EquirectangularReflectionMapping;
                 const pmremGenerator = new THREE.PMREMGenerator(renderer);
                 pmremGenerator.compileEquirectangularShader();
                 const envMap = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
                 
-                scene.environment = envMap; // Aplica reflejos a todo
-                // Opcional: Si quieres ver la imagen de fondo, descomenta la siguiente línea:
-                // scene.background = envMap; 
+                // Esto aplicará los reflejos AUTOMÁTICAMENTE respetando los materiales de Blender
+                scene.environment = envMap; 
                 
                 cubemapTexture.dispose();
                 pmremGenerator.dispose();
 
-                // 2. CARGAR ESTRUCTURA (CILINDRO)
+                // 2. CARGAR ESTRUCTURA
                 loadingText.innerText = "Cargando Máquina...";
                 await loadStructure();
 
-                // 3. PRE-CARGAR SÍMBOLOS ÚNICOS (OPTIMIZACIÓN)
+                // 3. PRE-CARGAR SÍMBOLOS
                 loadingText.innerText = "Cargando Símbolos...";
                 await loadSymbolMasters();
 
-                // 4. CREAR CARRETES USANDO CLONES
-                loadingText.innerText = "Montando Carretes...";
+                // 4. MONTAR CARRETES
+                loadingText.innerText = "Iniciando...";
                 for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
 
-                // FIN DE CARGA
                 loadingText.style.opacity = 0;
                 spinButton.disabled = false;
                 animate();
 
             } catch (error) {
-                loadingText.innerText = "Error de carga. Faltan archivos.";
-                loadingText.style.color = "#ff0000";
-                console.error("Error fatal durante la inicialización:", error);
+                loadingText.innerText = "Error cargando archivos.";
+                console.error(error);
             }
         }
 
@@ -201,15 +196,13 @@
             return new Promise((resolve, reject) => {
                 loader.load('cilindro.glb', (gltf) => {
                     const model = gltf.scene;
+                    
+                    // Solo activamos sombras. NO TOCAMOS MATERIALES.
                     model.traverse((node) => {
                         if (node.isMesh) {
                             node.receiveShadow = true;
-                            node.castShadow = true; 
-                            if (node.material) {
-                                // REFLEJOS FUERTES PARA LA CARCASA
-                                node.material.envMapIntensity = 1.5; // Aumentado para que el cubemap se note
-                                if (node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
-                            }
+                            node.castShadow = true;
+                            // El material se queda EXACTAMENTE como viene de Blender
                         }
                     });
                     scene.add(model);
@@ -219,13 +212,10 @@
         }
 
         function loadSymbolMasters() {
-            // Encontrar archivos únicos para cargar solo una vez
             const uniqueFiles = [...new Set(ARCHIVOS_GLB)];
-            
             const promises = uniqueFiles.map(file => {
                 return new Promise((resolve, reject) => {
                     loader.load(file, (gltf) => {
-                        // Guardamos la escena maestra
                         symbolMasters[file] = gltf.scene;
                         resolve();
                     }, undefined, reject);
@@ -244,10 +234,9 @@
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
                 const fileName = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
                 
-                // --- OPTIMIZACIÓN CLAVE: CLONAR EN LUGAR DE CARGAR ---
+                // Clonamos el objeto. Mantiene el material original.
                 const rawModel = symbolMasters[fileName].clone();
-                // -----------------------------------------------------
-
+                
                 const pivot = new THREE.Group();
                 pivot.rotation.x = (i * ANGLE_STEP);
                 rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
@@ -255,28 +244,19 @@
                 pivot.add(rawModel);
                 reelGroup.add(pivot);
 
-                // Hay que re-aplicar propiedades a los materiales clonados
+                // Solo sombras para los clones.
                 rawModel.traverse((node) => {
                     if (node.isMesh) {
                         node.castShadow = true; 
                         node.receiveShadow = true;
-                        if (node.material) {
-                             // Reflejos también en los símbolos (un poco menos intenso que la carcasa)
-                            node.material.envMapIntensity = 1.0;
-                            if(node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
-                        }
                     }
                 });
-                // Nota: Las animaciones (mixers) se omiten en los clones por simplicidad en esta fase.
             }
         }
 
-
         // =====================================================================
-        // LÓGICA DE JUEGO & ANIMACIÓN (Igual que antes)
+        // ANIMACIÓN
         // =====================================================================
-        const clock = new THREE.Clock();
-
         spinButton.addEventListener('click', () => {
             if (machineIsSpinning) return;
             machineIsSpinning = true;
@@ -285,14 +265,8 @@
             resultText.style.borderColor = "#ffd700";
             resultText.style.color = "#fff";
 
-            reelStates.forEach((state) => {
-                state.mode = 'SPINNING';
-                state.velocity = 0;
-            });
-
-            for (let i = 0; i < NUM_CARRETES; i++) {
-                setTimeout(() => triggerStop(i), SPIN_DURATION_MS + (i * STOP_DELAY_MS));
-            }
+            reelStates.forEach((state) => { state.mode = 'SPINNING'; state.velocity = 0; });
+            for (let i = 0; i < NUM_CARRETES; i++) setTimeout(() => triggerStop(i), SPIN_DURATION_MS + (i * STOP_DELAY_MS));
         });
 
         function triggerStop(reelIndex) {
@@ -300,12 +274,11 @@
             state.mode = 'STOPPING';
             const currentRotation = reels[reelIndex].rotation.x;
             const currentStep = Math.round(currentRotation / ANGLE_STEP);
-            const extraSpins = NUM_ITEMS_POR_RUEDA * 2; 
-            state.targetAngle = (currentStep + extraSpins) * ANGLE_STEP;
+            state.targetAngle = (currentStep + (NUM_ITEMS_POR_RUEDA * 2)) * ANGLE_STEP;
         }
 
         function checkResults() {
-            const resultados = [];
+             const resultados = [];
             reels.forEach((reel) => {
                 let angle = reel.rotation.x % (Math.PI * 2);
                 if (angle < 0) angle += Math.PI * 2;
@@ -313,7 +286,6 @@
                 const index = (NUM_ITEMS_POR_RUEDA - (steps % NUM_ITEMS_POR_RUEDA)) % NUM_ITEMS_POR_RUEDA;
                 resultados.push(NOMBRES_SIMBOLOS[index]);
             });
-
             resultText.innerText = resultados.join("  -  ");
             resultText.classList.add('show');
             
@@ -326,8 +298,6 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            // const delta = clock.getDelta(); // Mixers desactivados para clones
-            
             let allReelsIdle = true;
 
             reels.forEach((reel, i) => {
@@ -338,7 +308,6 @@
                     allReelsIdle = false;
                     if (state.velocity < MAX_SPEED) state.velocity += 0.02; 
                     reel.rotation.x += state.velocity;
-
                 } else if (state.mode === 'STOPPING') {
                     allReelsIdle = false;
                     const displacement = state.targetAngle - reel.rotation.x;
@@ -347,9 +316,7 @@
                     reel.rotation.x += state.velocity;
 
                     if (Math.abs(displacement) < 0.005 && Math.abs(state.velocity) < 0.005) {
-                        reel.rotation.x = state.targetAngle; 
-                        state.mode = 'IDLE';
-                        state.velocity = 0;
+                        reel.rotation.x = state.targetAngle; state.mode = 'IDLE'; state.velocity = 0;
                     }
                 }
             });
@@ -363,30 +330,20 @@
             renderer.render(scene, camera);
         }
 
-        // =====================================================================
-        // AJUSTE DE CÁMARA
-        // =====================================================================
         function adjustCamera() {
             const width = window.innerWidth;
             const height = window.innerHeight;
             const aspect = width / height;
-
             camera.aspect = aspect;
             camera.updateProjectionMatrix();
             renderer.setSize(width, height);
-
-            if (aspect < 1.0) {
-                camera.position.z = BASE_CAMERA_Z / (aspect * 0.85); 
-            } else {
-                camera.position.z = BASE_CAMERA_Z;
-            }
+            camera.position.z = aspect < 1.0 ? BASE_CAMERA_Z / (aspect * 0.85) : BASE_CAMERA_Z;
         }
 
         window.addEventListener('resize', adjustCamera);
         window.addEventListener('orientationchange', () => setTimeout(adjustCamera, 100));
         adjustCamera();
-
-        // INICIAR LA APLICACIÓN
+        
         init();
     </script>
 </body>

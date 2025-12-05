@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Close Up View</title>
+    <title>Slot Pro: Final Black Background</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
         #loading {
             position: absolute; top: 50%; width: 100%; text-align: center;
@@ -91,6 +91,11 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 
         // =====================================================================
         // CONFIGURACIÓN
@@ -109,9 +114,8 @@
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
         
-        // --- DOBLE CONFIGURACIÓN DE CÁMARA ---
-        const Z_NORMAL = 28; // Muy cerca (Primer plano)
-        const Z_VR = 42;     // Más lejos (Para confort visual en VR)
+        const Z_NORMAL = 28; 
+        const Z_VR = 42;     
 
         let machineIsSpinning = false;
         const spinButton = document.getElementById('spin-btn');
@@ -130,7 +134,8 @@
         // RENDERER & VR
         // =====================================================================
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x050505); 
+        // --- FONDO NEGRO PURO ---
+        scene.background = new THREE.Color(0x000000); 
         
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 150);
         
@@ -142,14 +147,31 @@
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.0; 
+        renderer.toneMappingExposure = 0.9;
         
         document.body.appendChild(renderer.domElement);
 
-        const effect = new StereoEffect(renderer);
-        effect.eyeSeparation = 0.005; 
-        effect.setSize(window.innerWidth, window.innerHeight);
+        const effectVR = new StereoEffect(renderer);
+        effectVR.eyeSeparation = 0.005; 
+        effectVR.setSize(window.innerWidth, window.innerHeight);
         
+        // --- POST-PROCESADO ---
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+        
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloomPass.threshold = 0.75; 
+        bloomPass.strength = 0.6;   
+        bloomPass.radius = 0.5;     
+        composer.addPass(bloomPass);
+        
+        const fxaaPass = new ShaderPass(FXAAShader);
+        const pixelRatio = renderer.getPixelRatio();
+        fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio);
+        fxaaPass.material.uniforms['resolution'].value.y = 1 / (window.innerHeight * pixelRatio);
+        composer.addPass(fxaaPass);
+
         let isVRMode = false;
 
         // =====================================================================
@@ -187,8 +209,8 @@
                 pmremGenerator.compileEquirectangularShader();
                 const envMap = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
                 
-                scene.environment = envMap; 
-                scene.background = envMap; 
+                scene.environment = envMap; // Mantiene los reflejos
+                // scene.background = envMap; // <-- COMENTADO: El fondo será el color negro definido arriba
                 
                 cubemapTexture.dispose();
                 pmremGenerator.dispose();
@@ -215,7 +237,6 @@
             }
         }
 
-        // --- MODEL SETUP (Materiales Originales) ---
         function setupModel(node) {
             if (node.isMesh) {
                 node.receiveShadow = true;
@@ -363,9 +384,9 @@
             }
 
             if (isVRMode) {
-                effect.render(scene, camera);
+                effectVR.render(scene, camera);
             } else {
-                renderer.render(scene, camera);
+                composer.render();
             }
         }
 
@@ -374,20 +395,20 @@
             const height = window.innerHeight;
             
             renderer.setSize(width, height);
-            effect.setSize(width, height);
+            effectVR.setSize(width, height);
+            composer.setSize(width, height);
+
+            const pixelRatio = renderer.getPixelRatio();
+            fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio);
+            fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
 
             const aspect = width / height;
             camera.aspect = aspect;
             camera.updateProjectionMatrix();
 
-            // LÓGICA DE DISTANCIA INTELIGENTE
-            // Si estamos en VR, usamos Z_VR (lejos).
-            // Si no, usamos Z_NORMAL (cerca), con ajuste extra para móviles verticales.
-            
             const targetZ = isVRMode ? Z_VR : Z_NORMAL;
 
             if (aspect < 1.0 && !isVRMode) {
-                // En móvil vertical, nos alejamos un pelín proporcionalmente para que quepa todo
                 camera.position.z = targetZ / (aspect * 0.85); 
             } else {
                 camera.position.z = targetZ;

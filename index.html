@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Pro: Colores Puros (Sin Blur)</title>
+    <title>Slot Pro: Custom Cylinder</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -55,7 +55,7 @@
 </head>
 <body>
 
-    <div id="loading">Carga Pura...</div>
+    <div id="loading">Cargando Cilindro Custom...</div>
     
     <div id="result-panel">
         <div id="result-text">LISTO</div>
@@ -75,7 +75,6 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        // SE HAN ELIMINADO TODOS LOS IMPORTS DE POST-PROCESADO (Composer, Passes)
 
         // =====================================================================
         // 1. CONFIGURACIÓN
@@ -88,7 +87,6 @@
         const NUM_CARRETES = 3;      
         const SEPARACION_CARRETES = 4.5; 
         const NUM_ITEMS_POR_RUEDA = 8; 
-        const RADIO_CILINDRO_FONDO = 5.25; 
         const RADIO_ORBITA_SIMBOLOS = 6.0; 
         const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
 
@@ -108,27 +106,23 @@
         }));
 
         // =====================================================================
-        // 2. RENDERER ESTÁNDAR (Colores Puros)
+        // 2. RENDERER (Configuración de Color Puro)
         // =====================================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050505);
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
         camera.position.set(0, 0, 34);
         
-        // Recuperamos antialias: true para bordes nítidos
         const renderer = new THREE.WebGLRenderer({ antialias: true }); 
         renderer.setSize(window.innerWidth, window.innerHeight);
-        // Recuperamos la resolución nativa máxima
         renderer.setPixelRatio(window.devicePixelRatio); 
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         
-        // IMPORTANTE: Sin ToneMapping para que los colores sean exactos a la textura
+        // SIN TONEMAPPING: Colores originales de la textura
         renderer.toneMapping = THREE.NoToneMapping; 
         
         document.body.appendChild(renderer.domElement);
-
-        // SE HA ELIMINADO TODA LA CONFIGURACIÓN DEL COMPOSER
 
         const clock = new THREE.Clock();
         const mixers = [];
@@ -151,17 +145,41 @@
         scene.add(sunLight);
 
         // =====================================================================
-        // 4. MODELOS (CARGA PURA)
+        // 4. MODELOS (CARGA DEL CILINDRO CUSTOM)
         // =====================================================================
-        const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 24, 64);
-        const cylinderMat = new THREE.MeshStandardMaterial({ color: 0xfffdd0, roughness: 0.2, metalness: 0.0 });
-        const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
-        backgroundCylinder.rotation.z = Math.PI / 2;
-        backgroundCylinder.receiveShadow = true; 
-        scene.add(backgroundCylinder);
-
-        const reels = []; 
         const loader = new GLTFLoader();
+
+        // --- CILINDRO CUSTOM ---
+        loader.load('cilindro.glb', (gltf) => {
+            const cylinder = gltf.scene;
+
+            // AJUSTE DE ORIENTACIÓN:
+            // Si en Blender lo exportaste "de pie" (Vertical en Z), descomenta la siguiente línea:
+            // cylinder.rotation.z = Math.PI / 2;
+            
+            // Si lo exportaste tumbado en X, lo dejamos así:
+            cylinder.rotation.set(0, 0, 0);
+
+            // Configuramos materiales
+            cylinder.traverse((node) => {
+                if (node.isMesh) {
+                    node.receiveShadow = true;  // Las sombras de los símbolos se proyectan aquí
+                    node.castShadow = false;    // El fondo no suele tapar luces
+                    
+                    // Aseguramos color correcto si tiene textura
+                    if (node.material && node.material.map) {
+                        node.material.map.colorSpace = THREE.SRGBColorSpace;
+                    }
+                }
+            });
+
+            scene.add(cylinder);
+        }, undefined, (err) => {
+            console.error("Error cargando cilindro.glb:", err);
+        });
+
+        // --- CARRETES DE SÍMBOLOS ---
+        const reels = []; 
         let itemsLoaded = 0;
         const totalItemsToLoad = NUM_CARRETES * NUM_ITEMS_POR_RUEDA;
 
@@ -179,25 +197,20 @@
                     const pivot = new THREE.Group();
                     pivot.rotation.x = (i * ANGLE_STEP);
                     
-                    // Asumiendo modelos ajustados en Blender (aprox 3.5m de alto)
+                    // Asumiendo modelos optimizados (aprox 3.5m)
                     rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
                     rawModel.rotation.x = AJUSTE_ROTACION_X;
 
                     pivot.add(rawModel);
                     reelGroup.add(pivot);
 
-                    // --- LÓGICA DE MATERIALES MINIMALISTA ---
                     rawModel.traverse((node) => {
                         if (node.isMesh) {
                             node.castShadow = true; 
                             node.receiveShadow = true;
-                            
                             if (node.material && node.material.map) {
-                                // Lo ÚNICO necesario es decir que la textura es sRGB
                                 node.material.map.colorSpace = THREE.SRGBColorSpace;
                             }
-                            // No tocamos roughness, metalness ni transparencia.
-                            // Se renderizará exactamente como viene del archivo GLB.
                         }
                     });
 
@@ -248,8 +261,6 @@
         }
 
         function checkResults() {
-            // (Eliminado el código que apagaba el blur)
-
             const resultados = [];
             reels.forEach((reel) => {
                 let angle = reel.rotation.x % (Math.PI * 2);
@@ -270,7 +281,7 @@
         }
 
         // =====================================================================
-        // 6. ANIMACIÓN ESTÁNDAR
+        // 6. ANIMACIÓN
         // =====================================================================
         function animate() {
             requestAnimationFrame(animate);
@@ -295,7 +306,7 @@
                     state.velocity *= SPRING_DAMPING;
                     reel.rotation.x += state.velocity;
 
-                    // Snap to grid para precisión
+                    // Snap to grid
                     if (Math.abs(displacement) < 0.005 && Math.abs(state.velocity) < 0.005) {
                         reel.rotation.x = state.targetAngle; 
                         state.mode = 'IDLE';
@@ -304,15 +315,12 @@
                 }
             });
 
-            // (Eliminada toda la lógica de gestión del blur)
-
             if (allReelsIdle && machineIsSpinning) {
                 machineIsSpinning = false;
                 spinButton.disabled = false;
                 checkResults();
             }
 
-            // VOLVEMOS AL RENDERER ESTÁNDAR
             renderer.render(scene, camera);
         }
 
@@ -320,7 +328,6 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            // (Eliminado composer.setSize)
         });
 
         animate();

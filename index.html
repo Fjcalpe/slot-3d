@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Consistent Color Fix</title>
+    <title>Slot Pro: GTAO (Real-time AO)</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -96,8 +96,10 @@
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
         import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
-        // --- NUEVO: OutputPass para corregir el color oscuro en 2D ---
         import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        
+        // --- IMPORTAMOS GTAO (AMBIENT OCCLUSION) ---
+        import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 
         // =====================================================================
         // CONFIGURACIÓN
@@ -146,8 +148,6 @@
         
         renderer.shadowMap.enabled = true; 
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
-        
-        // CERO FILTROS DE CINE. COLOR PURO.
         renderer.toneMapping = THREE.NoToneMapping; 
         
         document.body.appendChild(renderer.domElement);
@@ -156,22 +156,30 @@
         effectVR.eyeSeparation = 0.005; 
         effectVR.setSize(window.innerWidth, window.innerHeight);
         
-        // --- POST-PROCESADO (FXAA + OUTPUT CORRECTION) ---
+        // --- POST-PROCESADO (GTAO + FXAA + OUTPUT) ---
         const composer = new EffectComposer(renderer);
         
         // 1. Render Base
         const renderPass = new RenderPass(scene, camera);
         composer.addPass(renderPass);
+
+        // 2. GTAO (Ambient Occlusion en Tiempo Real)
+        // NOTA: Esto añade sombras de contacto en las grietas.
+        const gtaoPass = new GTAOPass(scene, camera, window.innerWidth, window.innerHeight);
+        gtaoPass.output = GTAOPass.OUTPUT.Default; // Usar Default para mezclar con la escena
+        // Ajustes de Calidad vs Rendimiento
+        gtaoPass.blendIntensity = 1.0;  // Fuerza de la sombra
+        gtaoPass.scale = 1.0;           // Escala del efecto
+        composer.addPass(gtaoPass);
         
-        // 2. FXAA (Antialias)
+        // 3. FXAA (Antialias)
         const fxaaPass = new ShaderPass(FXAAShader);
         const pixelRatio = renderer.getPixelRatio();
         fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio);
         fxaaPass.material.uniforms['resolution'].value.y = 1 / (window.innerHeight * pixelRatio);
         composer.addPass(fxaaPass);
 
-        // 3. OUTPUT PASS (¡CRUCIAL!)
-        // Este paso asegura que el modo 2D tenga el mismo brillo y color que el VR
+        // 4. Output Correcto
         const outputPass = new OutputPass();
         composer.addPass(outputPass);
 
@@ -387,6 +395,7 @@
             }
 
             if (isVRMode) {
+                // En VR normalmente NO activamos GTAO porque es muy pesado para doble renderizado
                 effectVR.render(scene, camera);
             } else {
                 composer.render();
@@ -404,6 +413,9 @@
             const pixelRatio = renderer.getPixelRatio();
             fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio);
             fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
+            
+            // Ajustar tamaño del GTAO al cambiar pantalla
+            if (gtaoPass) gtaoPass.setSize(width, height);
 
             const aspect = width / height;
             camera.aspect = aspect;

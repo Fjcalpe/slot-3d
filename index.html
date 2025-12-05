@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: VR Focused & Shiny</title>
+    <title>Slot Pro: VR Confortable</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -64,7 +64,6 @@
         }
 
         .hidden-in-vr { opacity: 0 !important; pointer-events: none !important; }
-
     </style>
 </head>
 <body>
@@ -110,8 +109,8 @@
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
         
-        // CÁMARA ALEJADA (CONFORT VR)
-        const BASE_CAMERA_Z = 48; 
+        // Z=40: Distancia cómoda para que la vista no se canse
+        const BASE_CAMERA_Z = 40; 
 
         let machineIsSpinning = false;
         const spinButton = document.getElementById('spin-btn');
@@ -145,10 +144,11 @@
         document.body.appendChild(renderer.domElement);
 
         const effect = new StereoEffect(renderer);
-        // --- AJUSTE CLAVE VR ---
-        // 0.6 es la distancia real de los ojos (6cm), pero a veces cuesta enfocar en móvil.
-        // 0.05 pone las imágenes casi juntas. Si lo ves doble, súbelo a 0.1
-        effect.eyeSeparation = 0.05; 
+        
+        // --- AJUSTE CRÍTICO DE CONFORT VISUAL ---
+        // 0.005 es una separación mínima. Elimina la visión doble.
+        // Hace que sea muy fácil enfocar con cardboard o bizqueando.
+        effect.eyeSeparation = 0.005; 
         effect.setSize(window.innerWidth, window.innerHeight);
         
         let isVRMode = false;
@@ -159,7 +159,7 @@
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); 
         scene.add(ambientLight);
 
-        const sunLight = new THREE.DirectionalLight(0xffffff, 0.6); 
+        const sunLight = new THREE.DirectionalLight(0xffffff, 0.8); 
         sunLight.position.set(-15, 25, 40); 
         sunLight.castShadow = true;
         const d = 25; 
@@ -181,12 +181,13 @@
                 });
                 
                 cubemapTexture.mapping = THREE.EquirectangularReflectionMapping;
+                
                 const pmremGenerator = new THREE.PMREMGenerator(renderer);
                 pmremGenerator.compileEquirectangularShader();
                 const envMap = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
                 
                 scene.environment = envMap; 
-                scene.background = envMap; // Fondo visible para verificar que carga
+                scene.background = envMap;
                 
                 cubemapTexture.dispose();
                 pmremGenerator.dispose();
@@ -213,19 +214,15 @@
             }
         }
 
-        function forceReflections(node) {
-            if (node.isMesh && node.material) {
+        // --- SOLO SOMBRAS (Materiales Originales) ---
+        function setupModel(node) {
+            if (node.isMesh) {
                 node.receiveShadow = true;
                 node.castShadow = true;
-                
-                // --- FORZADO DE REFLEJOS ---
-                // Si el modelo viene con Roughness 1.0 (Mate), no reflejará nada.
-                // Aquí lo forzamos a ser brillante y un poco metálico.
-                node.material.envMapIntensity = 1.5;
-                node.material.roughness = 0.1; // Muy liso (Brillante)
-                node.material.metalness = 0.6; // Medio metálico
-                
-                if (node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
+                // No tocamos roughness/metalness. Se usa el original del GLB.
+                if (node.material && node.material.map) {
+                    node.material.map.colorSpace = THREE.SRGBColorSpace;
+                }
             }
         }
 
@@ -233,7 +230,7 @@
             return new Promise((resolve, reject) => {
                 loader.load('cilindro.glb', (gltf) => {
                     const model = gltf.scene;
-                    model.traverse(forceReflections); // Aplicar brillo forzado
+                    model.traverse(setupModel);
                     scene.add(model);
                     resolve();
                 }, undefined, reject);
@@ -270,13 +267,12 @@
                 pivot.add(rawModel);
                 reelGroup.add(pivot);
 
-                // Aplicar brillo forzado también a los clones
-                rawModel.traverse(forceReflections);
+                rawModel.traverse(setupModel);
             }
         }
 
         // =====================================================================
-        // GAMEPLAY
+        // GAMEPLAY & ANIMACIÓN
         // =====================================================================
         
         function spinMachine() {
@@ -324,10 +320,6 @@
             }
         }
 
-        // =====================================================================
-        // VR TOGGLE
-        // =====================================================================
-        
         vrButton.addEventListener('click', () => {
             isVRMode = !isVRMode;
             if (isVRMode) {
@@ -388,6 +380,7 @@
             camera.aspect = aspect;
             camera.updateProjectionMatrix();
 
+            // Mantenemos la cámara alejada (Z=40) en ambos modos para consistencia
             if (aspect < 1.0 && !isVRMode) {
                 camera.position.z = BASE_CAMERA_Z / (aspect * 0.85); 
             } else {

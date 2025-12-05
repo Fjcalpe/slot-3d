@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Responsive & HDRI</title>
+    <title>Slot Pro: Matte Cylinder</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -25,7 +25,7 @@
             border-radius: 8px;
             padding: 10px 30px;
             color: #fff;
-            font-size: clamp(1rem, 4vw, 1.5rem); /* Texto adaptable */
+            font-size: clamp(1rem, 4vw, 1.5rem); 
             font-weight: bold;
             text-transform: uppercase;
             letter-spacing: 2px;
@@ -45,7 +45,7 @@
             padding: 15px 40px; cursor: pointer;
             box-shadow: 0 4px #992200, 0 0 15px #ff4500aa;
             text-shadow: 1px 1px 2px #000; transition: all 0.1s;
-            touch-action: manipulation; /* Mejora respuesta táctil */
+            touch-action: manipulation; 
         }
         #spin-btn:active { transform: translateY(4px); box-shadow: 0 0px #992200; }
         #spin-btn:disabled {
@@ -56,7 +56,7 @@
 </head>
 <body>
 
-    <div id="loading">Preparando Slot 3D...</div>
+    <div id="loading">Ajustando Materiales...</div>
     
     <div id="result-panel">
         <div id="result-text">LISTO</div>
@@ -95,7 +95,6 @@
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
         
-        // Distancia base de la cámara en modo Landscape
         const BASE_CAMERA_Z = 34;
 
         let machineIsSpinning = false;
@@ -113,7 +112,6 @@
         scene.background = new THREE.Color(0x050505);
         
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
-        // La posición inicial se ajustará en la función adjustCamera()
         
         const renderer = new THREE.WebGLRenderer({ antialias: true }); 
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -152,7 +150,7 @@
         // =====================================================================
         const loader = new GLTFLoader();
 
-        // CILINDRO CUSTOM
+        // CILINDRO CUSTOM (Material Ajustado: Mate)
         loader.load('cilindro.glb', (gltf) => {
             const cylinder = gltf.scene;
             cylinder.rotation.set(0, 0, 0); 
@@ -161,9 +159,11 @@
                     node.receiveShadow = true;
                     node.castShadow = false;
                     if (node.material) {
-                        node.material.roughness = 0.15; 
-                        node.material.metalness = 0.1;  
-                        node.material.envMapIntensity = 1.0; 
+                        // --- AJUSTE DE BRILLO ---
+                        node.material.roughness = 0.45;   // Más rugoso (menos espejo)
+                        node.material.metalness = 0.0;    // Cero metal (plástico puro)
+                        node.material.envMapIntensity = 0.2; // Intensidad de reflejo muy baja
+                        
                         if (node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
                     }
                 }
@@ -312,7 +312,7 @@
         }
 
         // =====================================================================
-        // AJUSTE DE CÁMARA INTELIGENTE (RESPONSIVE)
+        // AJUSTE DE CÁMARA INTELIGENTE
         // =====================================================================
         function adjustCamera() {
             const width = window.innerWidth;
@@ -323,28 +323,15 @@
             camera.updateProjectionMatrix();
             renderer.setSize(width, height);
 
-            // LOGICA DE DISTANCIA:
-            // Si aspect < 1 (Vertical/Retrato): La pantalla es estrecha. 
-            // Necesitamos alejar la cámara para que quepan los 3 rodillos horizontalmente.
-            // Si aspect > 1 (Horizontal/Paisaje): La pantalla es ancha. Usamos la distancia base.
-            
             if (aspect < 1.0) {
-                // Formula aproximada: cuanto más estrecha, más lejos.
-                // Dividimos la base por el aspecto para aumentar Z.
                 camera.position.z = BASE_CAMERA_Z / (aspect * 0.85); 
             } else {
                 camera.position.z = BASE_CAMERA_Z;
             }
         }
 
-        // Escuchar eventos de cambio de tamaño y orientación
         window.addEventListener('resize', adjustCamera);
-        window.addEventListener('orientationchange', () => {
-            // Pequeño delay para asegurar que el navegador actualizó las dimensiones
-            setTimeout(adjustCamera, 100);
-        });
-
-        // Llamada inicial
+        window.addEventListener('orientationchange', () => setTimeout(adjustCamera, 100));
         adjustCamera();
 
         animate();

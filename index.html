@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Pro: Pure Color & Motion Blur</title>
+    <title>Slot Pro: Colores Puros (Sin Blur)</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -67,9 +67,7 @@
         {
             "imports": {
                 "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-                "three/addons/postprocessing/": "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/",
-                "three/addons/shaders/": "https://unpkg.com/three@0.160.0/examples/jsm/shaders/"
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
             }
         }
     </script>
@@ -77,12 +75,7 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        
-        // --- POST-PROCESADO ---
-        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-        import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
-        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        // SE HAN ELIMINADO TODOS LOS IMPORTS DE POST-PROCESADO (Composer, Passes)
 
         // =====================================================================
         // 1. CONFIGURACIÓN
@@ -115,46 +108,37 @@
         }));
 
         // =====================================================================
-        // 2. RENDERER (SIN CORRECCIONES DE COLOR)
+        // 2. RENDERER ESTÁNDAR (Colores Puros)
         // =====================================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050505);
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
         camera.position.set(0, 0, 34);
         
-        const renderer = new THREE.WebGLRenderer({ antialias: false }); // Antialias false para el composer
+        // Recuperamos antialias: true para bordes nítidos
+        const renderer = new THREE.WebGLRenderer({ antialias: true }); 
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+        // Recuperamos la resolución nativa máxima
+        renderer.setPixelRatio(window.devicePixelRatio); 
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         
-        // --- ¡IMPORTANTE! ToneMapping desactivado para mantener colores originales ---
+        // IMPORTANTE: Sin ToneMapping para que los colores sean exactos a la textura
         renderer.toneMapping = THREE.NoToneMapping; 
         
         document.body.appendChild(renderer.domElement);
 
-        // --- SETUP POST-PROCESADO ---
-        const composer = new EffectComposer(renderer);
-        composer.addPass(new RenderPass(scene, camera));
-        
-        const afterimagePass = new AfterimagePass();
-        afterimagePass.uniforms['damp'].value = 0.0; // Empezamos con Blur APAGADO
-        composer.addPass(afterimagePass);
-
-        const outputPass = new OutputPass();
-        composer.addPass(outputPass);
+        // SE HA ELIMINADO TODA LA CONFIGURACIÓN DEL COMPOSER
 
         const clock = new THREE.Clock();
         const mixers = [];
 
         // =====================================================================
-        // 3. LUCES (VALORES ESTÁNDAR)
+        // 3. LUCES
         // =====================================================================
-        // Ambiental al 1.0 para que nada se vea negro
         const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); 
         scene.add(ambientLight);
 
-        // Direccional fuerte para sombras definidas
         const sunLight = new THREE.DirectionalLight(0xffffff, 2.0); 
         sunLight.position.set(-15, 25, 40); 
         sunLight.castShadow = true;
@@ -167,10 +151,9 @@
         scene.add(sunLight);
 
         // =====================================================================
-        // 4. MODELOS (SIN TOCAR MATERIALES)
+        // 4. MODELOS (CARGA PURA)
         // =====================================================================
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 24, 64);
-        // Volvemos al material original que te gustaba
         const cylinderMat = new THREE.MeshStandardMaterial({ color: 0xfffdd0, roughness: 0.2, metalness: 0.0 });
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
@@ -191,35 +174,30 @@
 
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
                 loader.load(ARCHIVOS_GLB[i % ARCHIVOS_GLB.length], (gltf) => {
-                    const rawModel = gltf.scene; // Sin clonar para máxima fidelidad
+                    const rawModel = gltf.scene;
                     
                     const pivot = new THREE.Group();
                     pivot.rotation.x = (i * ANGLE_STEP);
                     
-                    // Asumiendo que ya escalaste en Blender a ~3.5m
+                    // Asumiendo modelos ajustados en Blender (aprox 3.5m de alto)
                     rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
                     rawModel.rotation.x = AJUSTE_ROTACION_X;
 
                     pivot.add(rawModel);
                     reelGroup.add(pivot);
 
-                    // --- SIN TRATAMIENTOS DE MATERIAL EXTRAÑOS ---
+                    // --- LÓGICA DE MATERIALES MINIMALISTA ---
                     rawModel.traverse((node) => {
                         if (node.isMesh) {
                             node.castShadow = true; 
                             node.receiveShadow = true;
                             
-                            if (node.material) {
-                                // Solo aseguramos que se vean las texturas correctamente
-                                if (node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
-                                
-                                // FIX PARA BLUR: Si hay transparencia (Goku), necesitamos depthWrite
-                                // para que no haga efecto fantasma blanco.
-                                if (node.material.transparent) {
-                                    node.material.depthWrite = true;
-                                }
+                            if (node.material && node.material.map) {
+                                // Lo ÚNICO necesario es decir que la textura es sRGB
+                                node.material.map.colorSpace = THREE.SRGBColorSpace;
                             }
-                            // NO tocamos metalness ni roughness.
+                            // No tocamos roughness, metalness ni transparencia.
+                            // Se renderizará exactamente como viene del archivo GLB.
                         }
                     });
 
@@ -240,7 +218,7 @@
         for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
 
         // =====================================================================
-        // 5. LÓGICA DE JUEGO (SNAP & PRECISIÓN)
+        // 5. LÓGICA DE JUEGO
         // =====================================================================
         spinButton.addEventListener('click', () => {
             if (machineIsSpinning) return;
@@ -270,7 +248,7 @@
         }
 
         function checkResults() {
-            afterimagePass.uniforms['damp'].value = 0.0; // Blur OFF asegurado
+            // (Eliminado el código que apagaba el blur)
 
             const resultados = [];
             reels.forEach((reel) => {
@@ -292,7 +270,7 @@
         }
 
         // =====================================================================
-        // 6. ANIMACIÓN
+        // 6. ANIMACIÓN ESTÁNDAR
         // =====================================================================
         function animate() {
             requestAnimationFrame(animate);
@@ -300,7 +278,6 @@
             for (const mixer of mixers) mixer.update(delta);
             
             let allReelsIdle = true;
-            let maxCurrentVelocity = 0;
 
             reels.forEach((reel, i) => {
                 if (!reel) return;
@@ -318,27 +295,16 @@
                     state.velocity *= SPRING_DAMPING;
                     reel.rotation.x += state.velocity;
 
-                    // SNAP: Alineación forzada para evitar desfase visual
+                    // Snap to grid para precisión
                     if (Math.abs(displacement) < 0.005 && Math.abs(state.velocity) < 0.005) {
                         reel.rotation.x = state.targetAngle; 
                         state.mode = 'IDLE';
                         state.velocity = 0;
                     }
                 }
-                
-                if (Math.abs(state.velocity) > maxCurrentVelocity) {
-                    maxCurrentVelocity = Math.abs(state.velocity);
-                }
             });
 
-            // GESTIÓN DEL BLUR
-            // Usamos un valor ligeramente más bajo (0.85) para evitar que se queme a blanco
-            if (maxCurrentVelocity > 0.1) {
-                let targetDamp = Math.min(maxCurrentVelocity / MAX_SPEED, 1.0) * 0.85;
-                afterimagePass.uniforms['damp'].value = targetDamp;
-            } else {
-                afterimagePass.uniforms['damp'].value = 0.0;
-            }
+            // (Eliminada toda la lógica de gestión del blur)
 
             if (allReelsIdle && machineIsSpinning) {
                 machineIsSpinning = false;
@@ -346,14 +312,15 @@
                 checkResults();
             }
 
-            composer.render();
+            // VOLVEMOS AL RENDERER ESTÁNDAR
+            renderer.render(scene, camera);
         }
 
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            composer.setSize(window.innerWidth, window.innerHeight);
+            // (Eliminado composer.setSize)
         });
 
         animate();

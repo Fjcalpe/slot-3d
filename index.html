@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Pro: Real Motion Blur (Afterimage)</title>
+    <title>Slot Pro: Blur Dinámico & Precisión</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -20,17 +20,19 @@
         }
         #result-text {
             display: inline-block;
-            background-color: rgba(0, 0, 0, 0.6);
+            background-color: rgba(0, 0, 0, 0.8);
             border: 2px solid #ffd700;
             border-radius: 8px;
-            padding: 10px 30px;
+            padding: 15px 40px;
             color: #fff;
-            font-size: 1.2rem;
+            font-size: 1.5rem;
+            font-weight: bold;
             text-transform: uppercase;
             letter-spacing: 2px;
             opacity: 0;
             transform: translateY(-20px);
             transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
         }
         #result-text.show { opacity: 1; transform: translateY(0); }
 
@@ -54,10 +56,10 @@
 </head>
 <body>
 
-    <div id="loading">Cargando y preparando Blur...</div>
+    <div id="loading">Cargando Slot Pro...</div>
     
     <div id="result-panel">
-        <div id="result-text">LISTO PARA JUGAR</div>
+        <div id="result-text">LISTO</div>
     </div>
 
     <div id="spin-container"><button id="spin-btn" disabled>GIRAR</button></div>
@@ -77,15 +79,14 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         
-        // --- NUEVOS IMPORTS PARA POST-PROCESADO ---
+        // --- POST-PROCESADO ---
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
         import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-
         // =====================================================================
-        // 1. CONSTANTES & LOGICA
+        // 1. CONSTANTES
         // =====================================================================
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
         const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
@@ -98,16 +99,13 @@
         const RADIO_ORBITA_SIMBOLOS = 6.0; 
         const TAMANO_MODELO_FINAL = 3.5; 
 
-        const MAX_SPEED = 0.45; 
+        // Ajustes de Física
+        const MAX_SPEED = 0.50; // Velocidad alta para que se note el blur
         const SPIN_DURATION_MS = 1000; 
         const STOP_DELAY_MS = 300; 
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
         const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
-
-        // Constantes para el Blur
-        const BLUR_DAMP_ON = 0.94; // Valor alto (cercano a 1) = Estela larga
-        const BLUR_DAMP_OFF = 0.0; // Valor 0 = Sin estela
 
         let machineIsSpinning = false;
         const spinButton = document.getElementById('spin-btn');
@@ -118,45 +116,42 @@
         }));
 
         // =====================================================================
-        // 2. ESCENA & RENDERER
+        // 2. ESCENA & RENDERER (CON COMPOSER)
         // =====================================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050505);
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
         camera.position.set(0, 0, 34);
         
-        const renderer = new THREE.WebGLRenderer({ antialias: false }); // Antialias nativo se desactiva al usar Post-processing
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limitar pixel ratio para rendimiento
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         renderer.toneMapping = THREE.NoToneMapping; 
         document.body.appendChild(renderer.domElement);
 
-        // --- CONFIGURACIÓN DE POST-PROCESADO (BLUR REAL BARATO) ---
+        // --- SETUP DE BLUR (AFTERIMAGE) ---
         const composer = new EffectComposer(renderer);
         
-        // Paso 1: Renderizar la escena normal
+        // 1. Render Normal
         const renderPass = new RenderPass(scene, camera);
         composer.addPass(renderPass);
         
-        // Paso 2: Efecto Afterimage (Trails/Estelas)
+        // 2. Blur Pass
         const afterimagePass = new AfterimagePass();
-        // 'damp' controla cuánto persiste la imagen anterior.
-        // Lo iniciamos en 0 (apagado) para que no haya blur en estado IDLE.
-        afterimagePass.uniforms['damp'].value = BLUR_DAMP_OFF;
+        afterimagePass.uniforms['damp'].value = 0.0; // Empezamos en 0 (nítido)
         composer.addPass(afterimagePass);
 
-        // Paso 3: Output final (para asegurar corrección de color correcta al final)
+        // 3. Output (Corrección de color)
         const outputPass = new OutputPass();
         composer.addPass(outputPass);
-
 
         const clock = new THREE.Clock();
         const mixers = [];
 
         // =====================================================================
-        // 3. ILUMINACIÓN
+        // 3. ILUMINACIÓN (Posición Optimizada)
         // =====================================================================
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); 
         scene.add(ambientLight);
@@ -164,7 +159,8 @@
         const sunLight = new THREE.DirectionalLight(0xffffff, 2.5); 
         sunLight.position.set(-15, 25, 40); 
         sunLight.castShadow = true;
-        const d = 20; 
+        
+        const d = 22; 
         sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
         sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
         sunLight.shadow.bias = -0.0005; 
@@ -172,7 +168,7 @@
         scene.add(sunLight);
 
         // =====================================================================
-        // 4. MODELOS
+        // 4. CREACIÓN DE OBJETOS
         // =====================================================================
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 24, 64);
         const cylinderMat = new THREE.MeshStandardMaterial({ color: 0xfffdd0, roughness: 0.25, metalness: 0.0 });
@@ -197,24 +193,25 @@
                 loader.load(ARCHIVOS_GLB[i % ARCHIVOS_GLB.length], (gltf) => {
                     const rawModel = gltf.scene.clone(); 
                     
+                    // Centrar y Escalar
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const size = box.getSize(new THREE.Vector3());
                     rawModel.position.sub(box.getCenter(new THREE.Vector3()));
                     const scaleFactor = TAMANO_MODELO_FINAL / Math.max(size.x, size.y, size.z);
-                    
-                    // --- NOTA: Ya no necesitamos los nodos "BlurNode" ni "ScaleWrapper" extra ---
-                    // Al usar blur de imagen, la jerarquía puede ser más simple.
                     rawModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
+                    // Estructura de Pivote (Fundamental para alineación correcta)
                     const pivot = new THREE.Group();
                     pivot.rotation.x = (i * ANGLE_STEP);
                     
+                    // Colocar el modelo en su órbita
                     rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
                     rawModel.rotation.x = AJUSTE_ROTACION_X;
 
                     pivot.add(rawModel);
                     reelGroup.add(pivot);
 
+                    // Configurar Materiales
                     rawModel.traverse((node) => {
                         if (node.isMesh) {
                             node.castShadow = true; 
@@ -223,6 +220,7 @@
                         }
                     });
 
+                    // Animaciones
                     if (gltf.animations.length > 0) {
                         const mixer = new THREE.AnimationMixer(rawModel);
                         mixers.push(mixer);
@@ -240,22 +238,23 @@
         for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
 
         // =====================================================================
-        // 5. CONTROL DEL JUEGO
+        // 5. LÓGICA DE JUEGO & FÍSICA
         // =====================================================================
         spinButton.addEventListener('click', () => {
             if (machineIsSpinning) return;
             machineIsSpinning = true;
             spinButton.disabled = true;
             resultText.classList.remove('show');
+            resultText.style.borderColor = "#ffd700";
+            resultText.style.color = "#fff";
 
-            // --- ACTIVAR BLUR AL INICIAR GIRO ---
-            afterimagePass.uniforms['damp'].value = BLUR_DAMP_ON;
-
+            // Resetear estados
             reelStates.forEach((state) => {
                 state.mode = 'SPINNING';
                 state.velocity = 0;
             });
 
+            // Programar paradas
             for (let i = 0; i < NUM_CARRETES; i++) {
                 setTimeout(() => triggerStop(i), SPIN_DURATION_MS + (i * STOP_DELAY_MS));
             }
@@ -265,38 +264,43 @@
             const state = reelStates[reelIndex];
             state.mode = 'STOPPING';
             const currentRotation = reels[reelIndex].rotation.x;
-            const targetSteps = Math.ceil(currentRotation / ANGLE_STEP) + NUM_ITEMS_POR_RUEDA * 2;
-            state.targetAngle = targetSteps * ANGLE_STEP;
+            
+            // CÁLCULO PRECISO DEL OBJETIVO:
+            // Math.ceil asegura que vamos al siguiente slot entero.
+            // Añadimos 2 vueltas completas extra para asegurar inercia.
+            const steps = Math.ceil(currentRotation / ANGLE_STEP);
+            const extraSpins = NUM_ITEMS_POR_RUEDA * 2; 
+            state.targetAngle = (steps + extraSpins) * ANGLE_STEP;
         }
 
         function checkResults() {
-            // --- DESACTIVAR BLUR AL FINALIZAR ---
-            // Lo apagamos cuando todo se detiene para que el resultado sea nítido.
-            afterimagePass.uniforms['damp'].value = BLUR_DAMP_OFF;
+            // Aseguramos que el blur está APAGADO TOTALMENTE
+            afterimagePass.uniforms['damp'].value = 0.0;
 
             const resultados = [];
             reels.forEach((reel) => {
+                // Normalizar ángulo positivo
                 let angle = reel.rotation.x % (Math.PI * 2);
                 if (angle < 0) angle += Math.PI * 2;
+                
+                // Math.round es crucial aquí para corregir errores flotantes milimétricos
                 const steps = Math.round(angle / ANGLE_STEP);
                 const index = (NUM_ITEMS_POR_RUEDA - (steps % NUM_ITEMS_POR_RUEDA)) % NUM_ITEMS_POR_RUEDA;
                 resultados.push(NOMBRES_SIMBOLOS[index]);
             });
 
-            resultText.innerText = resultados.join("  |  ");
+            resultText.innerText = resultados.join("  -  ");
             resultText.classList.add('show');
             
             if (resultados[0] === resultados[1] && resultados[1] === resultados[2]) {
                 resultText.style.borderColor = "#00ff00";
                 resultText.style.color = "#00ff00";
-            } else {
-                resultText.style.borderColor = "#ffd700";
-                resultText.style.color = "#fff";
+                resultText.innerText += " ¡PREMIO!";
             }
         }
 
         // =====================================================================
-        // 6. ANIMACIÓN (Usando Composer)
+        // 6. ANIMACIÓN CON GESTIÓN DE BLUR
         // =====================================================================
         function animate() {
             requestAnimationFrame(animate);
@@ -304,6 +308,7 @@
             for (const mixer of mixers) mixer.update(delta);
             
             let allReelsIdle = true;
+            let maxCurrentVelocity = 0; // Para controlar la intensidad del blur
 
             reels.forEach((reel, i) => {
                 if (!reel) return;
@@ -311,23 +316,43 @@
 
                 if (state.mode === 'SPINNING') {
                     allReelsIdle = false;
+                    // Aceleración
                     if (state.velocity < MAX_SPEED) state.velocity += 0.02; 
                     reel.rotation.x += state.velocity;
 
                 } else if (state.mode === 'STOPPING') {
                     allReelsIdle = false;
+                    // Física de Muelle
                     const displacement = state.targetAngle - reel.rotation.x;
                     state.velocity += displacement * SPRING_TENSION;
                     state.velocity *= SPRING_DAMPING;
                     reel.rotation.x += state.velocity;
 
+                    // Stop condition estricta
                     if (Math.abs(displacement) < 0.001 && Math.abs(state.velocity) < 0.001) {
-                        reel.rotation.x = state.targetAngle;
+                        reel.rotation.x = state.targetAngle; // Snap exacto
                         state.mode = 'IDLE';
+                        state.velocity = 0;
                     }
                 }
-                // NOTA: Se ha eliminado toda la lógica de "Blur Elástico" aquí.
+                
+                // Rastreamos la velocidad máxima actual de la máquina
+                if (Math.abs(state.velocity) > maxCurrentVelocity) {
+                    maxCurrentVelocity = Math.abs(state.velocity);
+                }
             });
+
+            // --- GESTIÓN DINÁMICA DEL BLUR ---
+            // Si la velocidad es alta, blur alto (0.92). Si baja, el blur desaparece.
+            // Esto evita el desfase visual al frenar.
+            if (maxCurrentVelocity > 0.1) {
+                // Interpolamos entre 0 y 0.94 basado en la velocidad
+                let targetDamp = Math.min(maxCurrentVelocity / MAX_SPEED, 1.0) * 0.94;
+                afterimagePass.uniforms['damp'].value = targetDamp;
+            } else {
+                // Si va lento (frenando/rebote), apagamos el blur rápidamente
+                afterimagePass.uniforms['damp'].value = 0.0;
+            }
 
             if (allReelsIdle && machineIsSpinning) {
                 machineIsSpinning = false;
@@ -335,7 +360,6 @@
                 checkResults();
             }
 
-            // --- IMPORTANTE: Usamos composer.render() en vez de renderer.render() ---
             composer.render();
         }
 
@@ -343,7 +367,7 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            composer.setSize(window.innerWidth, window.innerHeight); // Actualizar composer también
+            composer.setSize(window.innerWidth, window.innerHeight);
         });
 
         animate();

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Pure Blender Materials</title>
+    <title>Slot Pro: VR Cardboard Ready</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -17,6 +17,7 @@
         #result-panel {
             position: absolute; top: 5vh; width: 100%; text-align: center;
             pointer-events: none; z-index: 20;
+            transition: opacity 0.3s;
         }
         #result-text {
             display: inline-block;
@@ -37,6 +38,7 @@
 
         #spin-container {
             position: absolute; bottom: 5vh; width: 100%; text-align: center; z-index: 20;
+            transition: opacity 0.3s;
         }
         #spin-btn {
             background: linear-gradient(to bottom, #ff4500, #c72c00);
@@ -52,17 +54,32 @@
             background: linear-gradient(to bottom, #555, #333); border-color: #777;
             color: #aaa; box-shadow: 0 4px #222; cursor:not-allowed; transform: translateY(0px);
         }
+
+        /* Botón para activar VR */
+        #vr-btn {
+            position: absolute; bottom: 20px; left: 20px; z-index: 30;
+            background: rgba(0,0,0,0.5); border: 2px solid #fff;
+            color: #fff; border-radius: 50%; width: 50px; height: 50px;
+            font-size: 20px; cursor: pointer; display: flex;
+            align-items: center; justify-content: center;
+        }
+
+        /* Clase para ocultar UI en modo VR */
+        .hidden-in-vr { opacity: 0 !important; pointer-events: none !important; }
+
     </style>
 </head>
 <body>
 
     <div id="loading">Cargando Recursos...</div>
     
-    <div id="result-panel">
+    <div id="result-panel" class="ui-element">
         <div id="result-text">LISTO</div>
     </div>
 
-    <div id="spin-container"><button id="spin-btn" disabled>GIRAR</button></div>
+    <div id="spin-container" class="ui-element"><button id="spin-btn" disabled>GIRAR</button></div>
+    
+    <button id="vr-btn" title="Activar Modo VR">👓</button>
 
     <script type="importmap">
         {
@@ -76,6 +93,7 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
 
         // =====================================================================
         // CONFIGURACIÓN
@@ -99,6 +117,8 @@
         const spinButton = document.getElementById('spin-btn');
         const resultText = document.getElementById('result-text');
         const loadingText = document.getElementById('loading');
+        const vrButton = document.getElementById('vr-btn');
+        const uiElements = document.querySelectorAll('.ui-element');
 
         const reelStates = Array(NUM_CARRETES).fill(null).map(() => ({
             mode: 'IDLE', velocity: 0, targetAngle: 0
@@ -107,7 +127,7 @@
         const symbolMasters = {};
 
         // =====================================================================
-        // RENDERER
+        // RENDERER & VR SETUP
         // =====================================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050505); 
@@ -119,27 +139,27 @@
         renderer.setPixelRatio(window.devicePixelRatio); 
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
-        
-        // TONE MAPPING: Esencial para evitar el "quemado"
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 0.9; // Valor < 1.0 reduce la sobreexposición
+        renderer.toneMappingExposure = 0.9;
         
         document.body.appendChild(renderer.domElement);
 
-        // =====================================================================
-        // LUCES (Ajustadas para no quemar)
-        // =====================================================================
+        // --- CONFIGURACIÓN ESTEREOSCÓPICA (VR) ---
+        const effect = new StereoEffect(renderer);
+        effect.eyeSeparation = 1.0; // Ajusta esto si se ve doble (0.5 a 2.0 suele funcionar)
+        effect.setSize(window.innerWidth, window.innerHeight);
         
-        // Luz de relleno muy suave
+        let isVRMode = false;
+
+        // =====================================================================
+        // LUCES
+        // =====================================================================
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.3); 
         scene.add(ambientLight);
 
-        // Luz principal (Sol) reducida
         const sunLight = new THREE.DirectionalLight(0xffffff, 0.8); 
         sunLight.position.set(-15, 25, 40); 
         sunLight.castShadow = true;
-        
-        // Configuración de sombras
         const d = 22; 
         sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
         sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
@@ -153,7 +173,6 @@
 
         async function init() {
             try {
-                // 1. CARGAR CUBEMAP
                 loadingText.innerText = "Cargando Entorno...";
                 const cubemapTexture = await new Promise((resolve, reject) => {
                     textureLoader.load('cubemap.jpg', resolve, undefined, reject);
@@ -164,21 +183,17 @@
                 pmremGenerator.compileEquirectangularShader();
                 const envMap = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
                 
-                // Esto aplicará los reflejos AUTOMÁTICAMENTE respetando los materiales de Blender
                 scene.environment = envMap; 
                 
                 cubemapTexture.dispose();
                 pmremGenerator.dispose();
 
-                // 2. CARGAR ESTRUCTURA
                 loadingText.innerText = "Cargando Máquina...";
                 await loadStructure();
 
-                // 3. PRE-CARGAR SÍMBOLOS
                 loadingText.innerText = "Cargando Símbolos...";
                 await loadSymbolMasters();
 
-                // 4. MONTAR CARRETES
                 loadingText.innerText = "Iniciando...";
                 for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
 
@@ -196,13 +211,10 @@
             return new Promise((resolve, reject) => {
                 loader.load('cilindro.glb', (gltf) => {
                     const model = gltf.scene;
-                    
-                    // Solo activamos sombras. NO TOCAMOS MATERIALES.
                     model.traverse((node) => {
                         if (node.isMesh) {
                             node.receiveShadow = true;
                             node.castShadow = true;
-                            // El material se queda EXACTAMENTE como viene de Blender
                         }
                     });
                     scene.add(model);
@@ -233,10 +245,7 @@
 
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
                 const fileName = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
-                
-                // Clonamos el objeto. Mantiene el material original.
                 const rawModel = symbolMasters[fileName].clone();
-                
                 const pivot = new THREE.Group();
                 pivot.rotation.x = (i * ANGLE_STEP);
                 rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
@@ -244,7 +253,6 @@
                 pivot.add(rawModel);
                 reelGroup.add(pivot);
 
-                // Solo sombras para los clones.
                 rawModel.traverse((node) => {
                     if (node.isMesh) {
                         node.castShadow = true; 
@@ -255,9 +263,10 @@
         }
 
         // =====================================================================
-        // ANIMACIÓN
+        // LÓGICA DE JUEGO
         // =====================================================================
-        spinButton.addEventListener('click', () => {
+        
+        function spinMachine() {
             if (machineIsSpinning) return;
             machineIsSpinning = true;
             spinButton.disabled = true;
@@ -267,6 +276,16 @@
 
             reelStates.forEach((state) => { state.mode = 'SPINNING'; state.velocity = 0; });
             for (let i = 0; i < NUM_CARRETES; i++) setTimeout(() => triggerStop(i), SPIN_DURATION_MS + (i * STOP_DELAY_MS));
+        }
+
+        spinButton.addEventListener('click', spinMachine);
+
+        // Control táctil para VR (tocar cualquier parte de la pantalla)
+        window.addEventListener('click', (e) => {
+            // Si estamos en VR y no se pulsó el botón de salir VR, giramos
+            if (isVRMode && e.target !== vrButton) {
+                spinMachine();
+            }
         });
 
         function triggerStop(reelIndex) {
@@ -295,6 +314,27 @@
                 resultText.innerText += " ¡PREMIO!";
             }
         }
+
+        // =====================================================================
+        // CONTROL VR / PANTALLA
+        // =====================================================================
+        
+        vrButton.addEventListener('click', () => {
+            isVRMode = !isVRMode;
+            
+            if (isVRMode) {
+                // Entrar en VR
+                uiElements.forEach(el => el.classList.add('hidden-in-vr'));
+                // Intento de pantalla completa
+                if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+            } else {
+                // Salir de VR
+                uiElements.forEach(el => el.classList.remove('hidden-in-vr'));
+                if (document.exitFullscreen) document.exitFullscreen();
+            }
+            
+            adjustCamera();
+        });
 
         function animate() {
             requestAnimationFrame(animate);
@@ -327,17 +367,32 @@
                 checkResults();
             }
 
-            renderer.render(scene, camera);
+            // RENDER LOOP: Decide si renderizar normal o Estéreo
+            if (isVRMode) {
+                effect.render(scene, camera);
+            } else {
+                renderer.render(scene, camera);
+            }
         }
 
         function adjustCamera() {
             const width = window.innerWidth;
             const height = window.innerHeight;
+            
+            // Actualizar ambos renderers
+            renderer.setSize(width, height);
+            effect.setSize(width, height);
+
             const aspect = width / height;
             camera.aspect = aspect;
             camera.updateProjectionMatrix();
-            renderer.setSize(width, height);
-            camera.position.z = aspect < 1.0 ? BASE_CAMERA_Z / (aspect * 0.85) : BASE_CAMERA_Z;
+
+            // Ajuste Z dinámico
+            if (aspect < 1.0) {
+                camera.position.z = BASE_CAMERA_Z / (aspect * 0.85); 
+            } else {
+                camera.position.z = BASE_CAMERA_Z;
+            }
         }
 
         window.addEventListener('resize', adjustCamera);

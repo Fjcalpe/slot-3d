@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Sun Boost</title>
+    <title>Slot Pro: Close Up View</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -15,7 +15,7 @@
         }
 
         #result-panel {
-            position: absolute; top: 10vh; width: 100%; text-align: center;
+            position: absolute; top: 5vh; width: 100%; text-align: center;
             pointer-events: none; z-index: 20;
             transition: opacity 0.3s;
         }
@@ -37,7 +37,7 @@
         #result-text.show { opacity: 1; transform: translateY(0); }
 
         #spin-container {
-            position: absolute; bottom: 10vh; width: 100%; text-align: center; z-index: 20;
+            position: absolute; bottom: 5vh; width: 100%; text-align: center; z-index: 20;
             transition: opacity 0.3s;
         }
         #spin-btn {
@@ -109,7 +109,9 @@
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
         
-        const BASE_CAMERA_Z = 40; 
+        // --- DOBLE CONFIGURACIÓN DE CÁMARA ---
+        const Z_NORMAL = 28; // Muy cerca (Primer plano)
+        const Z_VR = 42;     // Más lejos (Para confort visual en VR)
 
         let machineIsSpinning = false;
         const spinButton = document.getElementById('spin-btn');
@@ -145,20 +147,17 @@
         document.body.appendChild(renderer.domElement);
 
         const effect = new StereoEffect(renderer);
-        effect.eyeSeparation = 0.005; // Ajuste fino para VR
+        effect.eyeSeparation = 0.005; 
         effect.setSize(window.innerWidth, window.innerHeight);
         
         let isVRMode = false;
 
         // =====================================================================
-        // LUCES (Más Sol)
+        // LUCES
         // =====================================================================
-        
-        // 1. Luz Ambiente (Mantenemos suave para contraste)
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.3); 
         scene.add(ambientLight);
 
-        // 2. Luz de Sol (Aumentada a 1.6)
         const sunLight = new THREE.DirectionalLight(0xffffff, 1.6); 
         sunLight.position.set(-15, 25, 40); 
         sunLight.castShadow = true;
@@ -381,10 +380,17 @@
             camera.aspect = aspect;
             camera.updateProjectionMatrix();
 
+            // LÓGICA DE DISTANCIA INTELIGENTE
+            // Si estamos en VR, usamos Z_VR (lejos).
+            // Si no, usamos Z_NORMAL (cerca), con ajuste extra para móviles verticales.
+            
+            const targetZ = isVRMode ? Z_VR : Z_NORMAL;
+
             if (aspect < 1.0 && !isVRMode) {
-                camera.position.z = BASE_CAMERA_Z / (aspect * 0.85); 
+                // En móvil vertical, nos alejamos un pelín proporcionalmente para que quepa todo
+                camera.position.z = targetZ / (aspect * 0.85); 
             } else {
-                camera.position.z = BASE_CAMERA_Z;
+                camera.position.z = targetZ;
             }
         }
 

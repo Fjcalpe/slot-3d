@@ -3,20 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Pro: Carga Pura & Luz Solar</title>
+    <title>Slot Pro: Mecánica de Giro</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #050505; }
+        body { margin: 0; overflow: hidden; background-color: #050505; font-family: sans-serif; }
         #loading {
             position: absolute; top: 50%; width: 100%; text-align: center;
-            color: #ffd700; font-family: sans-serif; font-size: 1.5rem; 
+            color: #ffd700; font-size: 1.5rem; 
             text-shadow: 2px 2px 4px #000; transition: opacity 0.5s;
             pointer-events: none; z-index: 10;
+        }
+        /* ESTILOS DEL BOTÓN */
+        #spin-container {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            text-align: center;
+            z-index: 20;
+        }
+        #spin-btn {
+            background: linear-gradient(to bottom, #ff4500, #c72c00);
+            border: 3px solid #ffd700;
+            border-radius: 10px;
+            color: #ffd700;
+            font-size: 1.5rem;
+            font-weight: bold;
+            padding: 15px 40px;
+            cursor: pointer;
+            box-shadow: 0 4px #992200, 0 0 15px #ff4500aa;
+            text-shadow: 1px 1px 2px #000;
+            transition: all 0.1s;
+        }
+        #spin-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 0px #992200, 0 0 10px #ff4500aa;
+        }
+        /* Estado deshabilitado (mientras gira) */
+        #spin-btn:disabled {
+            background: linear-gradient(to bottom, #555, #333);
+            border-color: #777;
+            color: #aaa;
+            box-shadow: 0 4px #222;
+            cursor:not-allowed;
+            transform: translateY(0px);
         }
     </style>
 </head>
 <body>
 
-    <div id="loading">Cargando original...</div>
+    <div id="loading">Cargando recursos...</div>
+    
+    <div id="spin-container">
+        <button id="spin-btn" disabled>GIRAR</button>
+    </div>
 
     <script type="importmap">
         {
@@ -32,13 +70,9 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
         // =====================================================================
-        // 1. CONFIGURACIÓN
+        // 1. CONFIGURACIÓN Y CONSTANTES DE JUEGO
         // =====================================================================
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
-        
-        // AJUSTE DE ORIENTACIÓN
-        // 0 = De pie (Radial). 
-        // -Math.PI/2 = Tumbado (Tangente).
         const AJUSTE_ROTACION_X = 0; 
 
         const NUM_CARRETES = 3;      
@@ -47,7 +81,30 @@
         const RADIO_CILINDRO_FONDO = 5.25; 
         const RADIO_ORBITA_SIMBOLOS = 6.0; 
         const TAMANO_MODELO_FINAL = 3.5; 
-        const VELOCIDAD_GIRO_BASE = 0.02;
+
+        // --- CONSTANTES DE ANIMACIÓN ---
+        const MAX_SPEED = 0.4; // Velocidad máxima de giro (radianes por frame)
+        const SPIN_DURATION_MS = 1000; // Tiempo antes de que el primer rodillo empiece a frenar
+        const STOP_DELAY_MS = 400; // Retraso entre la parada de un rodillo y el siguiente
+        
+        // FÍSICA DEL REBOTE (Spring Physics)
+        // TENSION: Fuerza que tira hacia la posición final (más alto = rebote más rápido/duro)
+        // DAMPING: Fricción (0.0 = rebota por siempre, 1.0 = sin rebote). 0.85 es suave.
+        const SPRING_TENSION = 0.08; 
+        const SPRING_DAMPING = 0.85; 
+        const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA; // Ángulo entre símbolos
+
+        // Estado global de la máquina
+        let machineIsSpinning = false;
+        const spinButton = document.getElementById('spin-btn');
+
+        // Estado individual de cada carrete
+        // mode: 'IDLE' (parado), 'SPINNING' (velocidad constante), 'STOPPING' (física de rebote)
+        const reelStates = Array(NUM_CARRETES).fill(null).map(() => ({
+            mode: 'IDLE',
+            velocity: 0,    // Velocidad actual para la física
+            targetAngle: 0  // Dónde debe terminar
+        }));
 
         // =====================================================================
         // 2. ESCENA & CÁMARA
@@ -56,15 +113,13 @@
         scene.background = new THREE.Color(0x050505);
 
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, 0, 32); // Cámara cerca
+        camera.position.set(0, 0, 32); 
         
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
-        
-        // ToneMapping estándar para no alterar colores
         renderer.toneMapping = THREE.NoToneMapping; 
         
         document.body.appendChild(renderer.domElement);
@@ -73,40 +128,27 @@
         const mixers = [];
 
         // =====================================================================
-        // 3. ILUMINACIÓN (RESET A VALORES NORMALES)
+        // 3. ILUMINACIÓN
         // =====================================================================
-        
-        // A. Luz Ambiente (Base suave)
-        // Valor 1.0: Ni muy oscuro, ni lavado.
         const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); 
         scene.add(ambientLight);
 
-        // B. Luz Solar (Direccional)
-        // Valor 2.0: Fuerza estándar para sol.
         const sunLight = new THREE.DirectionalLight(0xffffff, 2.0); 
-        sunLight.position.set(-20, 30, 20); // Arriba a la izquierda
+        sunLight.position.set(-20, 30, 20); 
         sunLight.castShadow = true;
-        sunLight.shadow.mapSize.width = 2048;
-        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.mapSize.set(2048, 2048);
         scene.add(sunLight);
 
         // =====================================================================
-        // 4. CILINDRO DE FONDO (MARFIL PLÁSTICO)
+        // 4. FONDO Y MODELOS
         // =====================================================================
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 22, 64);
-        const cylinderMat = new THREE.MeshStandardMaterial({ 
-            color: 0xfffdd0,   // Marfil
-            roughness: 0.2,    // Plástico pulido
-            metalness: 0.0,    // No metálico
-        });
+        const cylinderMat = new THREE.MeshStandardMaterial({ color: 0xfffdd0, roughness: 0.2, metalness: 0.0 });
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
         backgroundCylinder.rotation.z = Math.PI / 2;
         backgroundCylinder.receiveShadow = true; 
         scene.add(backgroundCylinder);
 
-        // =====================================================================
-        // 5. CARGA DE MODELOS (TAL CUAL SON)
-        // =====================================================================
         const reels = []; 
         const loader = new GLTFLoader();
         let itemsLoaded = 0;
@@ -115,97 +157,167 @@
         function crearHilera(indicePosicion) {
             const reelGroup = new THREE.Group();
             const offsetTotal = (NUM_CARRETES - 1) * SEPARACION_CARRETES;
-            const posX = (indicePosicion * SEPARACION_CARRETES) - (offsetTotal / 2);
-            reelGroup.position.x = posX;
+            reelGroup.position.x = (indicePosicion * SEPARACION_CARRETES) - (offsetTotal / 2);
             scene.add(reelGroup);
             reels.push(reelGroup);
 
-            const angleStep = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
-
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
                 const archivoActual = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
-
                 loader.load(archivoActual, (gltf) => {
                     const rawModel = gltf.scene.clone(); 
-
-                    // Escala y Centro
+                    // Procesamiento del modelo (escala, sombras, colorSpace)
                     const box = new THREE.Box3().setFromObject(rawModel);
                     const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
                     rawModel.position.sub(center);
-                    const maxDim = Math.max(size.x, size.y, size.z);
-                    const scaleFactor = TAMANO_MODELO_FINAL / maxDim;
+                    const scaleFactor = TAMANO_MODELO_FINAL / Math.max(size.x, size.y, size.z);
                     
                     const scaleWrapper = new THREE.Group();
                     scaleWrapper.add(rawModel);
                     scaleWrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-                    // --- SIN MODIFICAR MATERIALES ---
-                    // Solo activamos sombras y corrección de color sRGB en texturas
                     rawModel.traverse((node) => {
                         if (node.isMesh) {
                             node.castShadow = true;
                             node.receiveShadow = true;
-
-                            if (node.material && node.material.map) {
-                                // Esto NO cambia el material, solo le dice a Three.js
-                                // cómo interpretar los colores de la imagen (obligatorio)
-                                node.material.map.colorSpace = THREE.SRGBColorSpace;
-                                node.material.needsUpdate = true;
+                            // Habilitar transparencia para el truco de "motion blur"
+                            if (node.material) {
+                                node.material.transparent = true; 
+                                if (node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
                             }
-                            // Aquí NO tocamos ni metalness, ni roughness, ni color.
                         }
                     });
 
-                    // Animación interna
                     if (gltf.animations && gltf.animations.length > 0) {
                         const mixer = new THREE.AnimationMixer(rawModel);
                         const action = mixer.clipAction(gltf.animations[0]);
                         action.timeScale = 0.5; 
-                        action.play();
+                        // action.play(); // COMENTADO: Animaciones "idle" desactivadas por defecto
                         mixers.push(mixer);
                     }
 
-                    // Posicionamiento
                     const pivot = new THREE.Group();
                     reelGroup.add(pivot);
-
-                    const itemAngle = (i * angleStep);
-                    pivot.rotation.x = itemAngle;
-                    
+                    pivot.rotation.x = (i * ANGLE_STEP);
                     pivot.add(scaleWrapper);
                     scaleWrapper.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
-
-                    // Orientación
-                    scaleWrapper.rotation.set(0, 0, 0); 
                     scaleWrapper.rotation.x = AJUSTE_ROTACION_X;
 
                     itemsLoaded++;
                     if (itemsLoaded === totalItemsToLoad) {
                         document.getElementById('loading').style.opacity = 0;
+                        // Habilitar el botón cuando todo está cargado
+                        spinButton.disabled = false;
                     }
-
                 }, undefined, (err) => console.error(err));
             }
         }
 
-        for(let r = 0; r < NUM_CARRETES; r++) {
-            crearHilera(r);
-        }
+        for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
 
         // =====================================================================
-        // 6. ANIMACIÓN
+        // 5. LÓGICA DE GIRO (NUEVO)
+        // =====================================================================
+        
+        // Función auxiliar para el "Motion Blur" barato (reduce opacidad)
+        function setReelOpacity(reelIndex, opacity) {
+            reels[reelIndex].traverse((node) => {
+                if (node.isMesh && node.material) {
+                    node.material.opacity = opacity;
+                }
+            });
+        }
+
+        spinButton.addEventListener('click', startSpin);
+
+        function startSpin() {
+            if (machineIsSpinning) return;
+            machineIsSpinning = true;
+            spinButton.disabled = true;
+
+            // 1. Iniciar giro rápido para todos
+            reelStates.forEach((state, i) => {
+                state.mode = 'SPINNING';
+                state.velocity = 0;
+                setReelOpacity(i, 0.7); // Activar "motion blur"
+            });
+
+            // 2. Programar las paradas secuenciales
+            for (let i = 0; i < NUM_CARRETES; i++) {
+                const delay = SPIN_DURATION_MS + (i * STOP_DELAY_MS);
+                setTimeout(() => triggerStop(i), delay);
+            }
+        }
+
+        function triggerStop(reelIndex) {
+            const state = reelStates[reelIndex];
+            const reelMesh = reels[reelIndex];
+
+            state.mode = 'STOPPING';
+            
+            // Calcular dónde debería parar.
+            // Math.ceil asegura que siempre paramos "más adelante" de donde estamos ahora.
+            // Añadimos (Math.PI * 4) para asegurar que dé un par de vueltas extra antes de empezar a frenar.
+            const currentRotation = reelMesh.rotation.x;
+            const targetSteps = Math.ceil(currentRotation / ANGLE_STEP) + NUM_ITEMS_POR_RUEDA * 2;
+            state.targetAngle = targetSteps * ANGLE_STEP;
+        }
+
+
+        // =====================================================================
+        // 6. LOOP DE ANIMACIÓN (ACTUALIZADO)
         // =====================================================================
         function animate() {
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
             for (const mixer of mixers) mixer.update(delta);
             
-            reels.forEach((reel, index) => { 
-                if(reel) {
-                    reel.rotation.x += VELOCIDAD_GIRO_BASE + (index * 0.003); 
+            let allReelsIdle = true;
+
+            reels.forEach((reel, i) => {
+                if (!reel) return;
+                const state = reelStates[i];
+
+                if (state.mode === 'SPINNING') {
+                    allReelsIdle = false;
+                    // Giro simple a velocidad constante
+                    reel.rotation.x += MAX_SPEED;
+
+                } else if (state.mode === 'STOPPING') {
+                    allReelsIdle = false;
+                    
+                    // --- FÍSICA DEL REBOTE (Spring Physics) ---
+                    // 1. Calcular la distancia al objetivo
+                    const displacement = state.targetAngle - reel.rotation.x;
+                    
+                    // 2. Aplicar fuerza del muelle (tensión) a la velocidad
+                    state.velocity += displacement * SPRING_TENSION;
+                    
+                    // 3. Aplicar fricción (damping) para que eventualmente se detenga
+                    state.velocity *= SPRING_DAMPING;
+                    
+                    // 4. Mover el objeto
+                    reel.rotation.x += state.velocity;
+
+                    // 5. Condición de parada final:
+                    // Si está muy cerca del objetivo Y se mueve muy despacio
+                    if (Math.abs(displacement) < 0.001 && Math.abs(state.velocity) < 0.001) {
+                        reel.rotation.x = state.targetAngle; // Asegurar posición exacta
+                        state.mode = 'IDLE';
+                        setReelOpacity(i, 1.0); // Quitar "motion blur"
+                    }
                 }
+                // Si el modo es 'IDLE', no hacemos nada con la rotación
             });
+
+            // Si todos han vuelto a IDLE y la máquina estaba girando, reactivamos el botón
+            if (allReelsIdle && machineIsSpinning) {
+                machineIsSpinning = false;
+                spinButton.disabled = false;
+                console.log("Tirada finalizada");
+                // Aquí se comprobarían los premios más adelante
+            }
+
             renderer.render(scene, camera);
         }
 

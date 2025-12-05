@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Coin Fountain</title>
+    <title>Slot Pro: ALWAYS WIN (Debug)</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -119,13 +119,12 @@
         // =====================================================================
         // CONFIGURACIÓN DE PARTÍCULAS (MONEDAS)
         // =====================================================================
-        const COIN_COUNT = 150;      // Cantidad de monedas
-        const COIN_GRAVITY = 25.0;   // Fuerza de gravedad
-        const COIN_BLAST_FORCE = 18; // Fuerza hacia arriba
-        const COIN_SPREAD = 6.0;     // Dispersión lateral
-        const COIN_SCALE = 0.8;      // Tamaño de la moneda
+        const COIN_COUNT = 150;      
+        const COIN_GRAVITY = 25.0;   
+        const COIN_BLAST_FORCE = 18; 
+        const COIN_SPREAD = 6.0;     
+        const COIN_SCALE = 0.8;      
 
-        // Variables de estado
         let machineIsSpinning = false;
         const spinButton = document.getElementById('spin-btn');
         const resultText = document.getElementById('result-text');
@@ -139,12 +138,10 @@
 
         const symbolMasters = {};
         
-        // Variables para las monedas
         let coinInstancedMesh;
-        const dummy = new THREE.Object3D(); // Helper para matrices
-        const coinsData = []; // Array para guardar velocidad y posición de cada moneda
+        const dummy = new THREE.Object3D(); 
+        const coinsData = []; 
 
-        // Inicializar datos de monedas
         for(let i=0; i<COIN_COUNT; i++) {
             coinsData.push({
                 position: new THREE.Vector3(),
@@ -257,8 +254,6 @@
             return new Promise((resolve, reject) => {
                 loader.load('moneda.glb', (gltf) => {
                     let coinGeometry, coinMaterial;
-                    
-                    // Buscar la malla de la moneda dentro del GLB
                     gltf.scene.traverse((node) => {
                         if (node.isMesh) {
                             coinGeometry = node.geometry;
@@ -267,17 +262,14 @@
                     });
 
                     if (coinGeometry && coinMaterial) {
-                        // Asegurar que brille
                         if (coinMaterial.map) coinMaterial.map.colorSpace = THREE.SRGBColorSpace;
                         coinMaterial.metalness = 1.0;
-                        coinMaterial.roughness = 0.2; // Oro pulido
+                        coinMaterial.roughness = 0.2; 
 
-                        // Crear InstancedMesh para renderizar 100 monedas de golpe
                         coinInstancedMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, COIN_COUNT);
                         coinInstancedMesh.castShadow = true;
                         coinInstancedMesh.receiveShadow = true;
                         
-                        // Inicialmente esconderlas (escala 0)
                         for (let i = 0; i < COIN_COUNT; i++) {
                             dummy.position.set(0, -100, 0);
                             dummy.scale.set(0, 0, 0);
@@ -293,66 +285,34 @@
         }
 
         function spawnCoins() {
-            // Reiniciar y lanzar todas las monedas
             for(let i=0; i < COIN_COUNT; i++) {
                 const data = coinsData[i];
                 data.active = true;
-                
-                // Posición inicial: Fila central (Y=0), dispersión en X y Z
-                data.position.set(
-                    (Math.random() - 0.5) * COIN_SPREAD * 2, // X aleatorio
-                    -2.0,                                    // Y un poco abajo para salir disparada
-                    (Math.random() - 0.5) * 4.0              // Z profundidad aleatoria
-                );
-
-                // Velocidad: Disparo hacia arriba con variación
-                data.velocity.set(
-                    (Math.random() - 0.5) * 8.0,             // X: dispersión lateral
-                    COIN_BLAST_FORCE + (Math.random() * 10), // Y: fuerza explosiva variable
-                    (Math.random() - 0.5) * 5.0 + 8.0        // Z: ligero impulso hacia cámara
-                );
-
-                // Rotación aleatoria inicial
+                data.position.set((Math.random() - 0.5) * COIN_SPREAD * 2, -2.0, (Math.random() - 0.5) * 4.0);
+                data.velocity.set((Math.random() - 0.5) * 8.0, COIN_BLAST_FORCE + (Math.random() * 10), (Math.random() - 0.5) * 5.0 + 8.0);
                 data.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
-                
-                // Velocidad de giro (Tumble)
-                data.rotSpeed.set(
-                    (Math.random() - 0.5) * 10,
-                    (Math.random() - 0.5) * 10,
-                    (Math.random() - 0.5) * 10
-                );
+                data.rotSpeed.set((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10);
             }
         }
 
         function updateCoins(delta) {
             if (!coinInstancedMesh) return;
-            
             let activeCount = 0;
-
             for(let i=0; i < COIN_COUNT; i++) {
                 const data = coinsData[i];
-
                 if (data.active) {
-                    // Física simple
-                    data.velocity.y -= COIN_GRAVITY * delta; // Gravedad
+                    data.velocity.y -= COIN_GRAVITY * delta; 
                     data.position.addScaledVector(data.velocity, delta);
-
-                    // Rotación
                     data.rotation.x += data.rotSpeed.x * delta;
                     data.rotation.y += data.rotSpeed.y * delta;
                     data.rotation.z += data.rotSpeed.z * delta;
-
-                    // Actualizar matriz
                     dummy.position.copy(data.position);
                     dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
                     dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE);
                     dummy.updateMatrix();
                     coinInstancedMesh.setMatrixAt(i, dummy.matrix);
-
-                    // Desactivar si cae fuera de pantalla
                     if (data.position.y < -30) {
                         data.active = false;
-                        // Esconder
                         dummy.scale.set(0,0,0);
                         dummy.updateMatrix();
                         coinInstancedMesh.setMatrixAt(i, dummy.matrix);
@@ -361,13 +321,12 @@
                     }
                 }
             }
-
             if (activeCount > 0 || coinInstancedMesh.count > 0) {
                 coinInstancedMesh.instanceMatrix.needsUpdate = true;
             }
         }
 
-        // --- SETUP ESTRUCTURA ---
+        // --- SETUP ---
         function setupStructure(node) {
             if (node.isMesh) {
                 node.castShadow = true;
@@ -378,7 +337,6 @@
             }
         }
 
-        // --- SETUP SÍMBOLOS ---
         function setupSymbol(node) {
              if (node.isMesh) {
                 node.castShadow = true;
@@ -434,7 +392,7 @@
         }
 
         // =====================================================================
-        // LÓGICA DE JUEGO
+        // LÓGICA TRUCADA: SIEMPRE GANA (VISUALMENTE ALINEADO)
         // =====================================================================
         
         function spinMachine() {
@@ -458,14 +416,27 @@
         function triggerStop(reelIndex) {
             const state = reelStates[reelIndex];
             state.mode = 'STOPPING';
+            
+            // --- HACK PARA GANAR SIEMPRE ---
+            // Calculamos exactamente cuantas vueltas dar para que pare en 0 grados (Símbolo 1)
             const currentRotation = reels[reelIndex].rotation.x;
-            const currentStep = Math.round(currentRotation / ANGLE_STEP);
-            state.targetAngle = (currentStep + (NUM_ITEMS_POR_RUEDA * 2)) * ANGLE_STEP;
+            const fullCircle = Math.PI * 2;
+            
+            // Redondeamos hacia arriba a la siguiente vuelta completa
+            const nextSafeRound = Math.ceil(currentRotation / fullCircle);
+            
+            // Añadimos unas vueltas extra fijas + el índice para que paren en cascada
+            // Al ser un número entero de vueltas ( * fullCircle), siempre caerá en el mismo punto.
+            const targetRounds = nextSafeRound + 2 + reelIndex; 
+            
+            state.targetAngle = targetRounds * fullCircle;
         }
 
         function checkResults() {
              const resultados = [];
             reels.forEach((reel) => {
+                // Al haber forzado la parada, el ángulo será múltiplo de 2PI,
+                // por lo que el índice siempre será el mismo.
                 let angle = reel.rotation.x % (Math.PI * 2);
                 if (angle < 0) angle += Math.PI * 2;
                 const steps = Math.round(angle / ANGLE_STEP);
@@ -475,13 +446,13 @@
             resultText.innerText = resultados.join("  -  ");
             resultText.classList.add('show');
             
-            // --- CONDICIÓN DE PREMIO ---
+            // --- LA CONDICIÓN AHORA SIEMPRE SE CUMPLE ---
             if (resultados[0] === resultados[1] && resultados[1] === resultados[2]) {
                 resultText.style.borderColor = "#00ff00";
                 resultText.style.color = "#00ff00";
                 resultText.innerText += " ¡PREMIO!";
                 
-                // ¡LANZAR MONEDAS!
+                // ¡LLUVIA DE MONEDAS!
                 spawnCoins();
             }
         }
@@ -501,9 +472,7 @@
         function animate() {
             requestAnimationFrame(animate);
             
-            const delta = clock.getDelta(); // Necesario para física suave
-            
-            // Actualizar monedas
+            const delta = clock.getDelta(); 
             updateCoins(delta);
 
             let allReelsIdle = true;

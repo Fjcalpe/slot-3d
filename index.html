@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: VR Cardboard Ready</title>
+    <title>Slot Pro: VR Distance & Reflections</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -15,7 +15,7 @@
         }
 
         #result-panel {
-            position: absolute; top: 5vh; width: 100%; text-align: center;
+            position: absolute; top: 10vh; width: 100%; text-align: center;
             pointer-events: none; z-index: 20;
             transition: opacity 0.3s;
         }
@@ -37,7 +37,7 @@
         #result-text.show { opacity: 1; transform: translateY(0); }
 
         #spin-container {
-            position: absolute; bottom: 5vh; width: 100%; text-align: center; z-index: 20;
+            position: absolute; bottom: 10vh; width: 100%; text-align: center; z-index: 20;
             transition: opacity 0.3s;
         }
         #spin-btn {
@@ -55,16 +55,15 @@
             color: #aaa; box-shadow: 0 4px #222; cursor:not-allowed; transform: translateY(0px);
         }
 
-        /* Botón para activar VR */
+        /* Botón VR */
         #vr-btn {
             position: absolute; bottom: 20px; left: 20px; z-index: 30;
             background: rgba(0,0,0,0.5); border: 2px solid #fff;
             color: #fff; border-radius: 50%; width: 50px; height: 50px;
-            font-size: 20px; cursor: pointer; display: flex;
+            font-size: 24px; cursor: pointer; display: flex;
             align-items: center; justify-content: center;
         }
 
-        /* Clase para ocultar UI en modo VR */
         .hidden-in-vr { opacity: 0 !important; pointer-events: none !important; }
 
     </style>
@@ -79,7 +78,7 @@
 
     <div id="spin-container" class="ui-element"><button id="spin-btn" disabled>GIRAR</button></div>
     
-    <button id="vr-btn" title="Activar Modo VR">👓</button>
+    <button id="vr-btn" title="Modo VR">👓</button>
 
     <script type="importmap">
         {
@@ -111,7 +110,9 @@
         const STOP_DELAY_MS = 300; 
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
-        const BASE_CAMERA_Z = 34;
+        
+        // --- CÁMARA ALEJADA PARA VR ---
+        const BASE_CAMERA_Z = 48; // Aumentado de 34 a 48 para mejorar el enfoque visual
 
         let machineIsSpinning = false;
         const spinButton = document.getElementById('spin-btn');
@@ -127,12 +128,12 @@
         const symbolMasters = {};
 
         // =====================================================================
-        // RENDERER & VR SETUP
+        // RENDERER & VR
         // =====================================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050505); 
         
-        const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
+        const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 150);
         
         const renderer = new THREE.WebGLRenderer({ antialias: true }); 
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -140,30 +141,30 @@
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 0.9;
+        renderer.toneMappingExposure = 1.0; 
         
         document.body.appendChild(renderer.domElement);
 
-        // --- CONFIGURACIÓN ESTEREOSCÓPICA (VR) ---
         const effect = new StereoEffect(renderer);
-        effect.eyeSeparation = 1.0; // Ajusta esto si se ve doble (0.5 a 2.0 suele funcionar)
+        effect.eyeSeparation = 0.6; // Separación estándar para ojos humanos en VR móvil
         effect.setSize(window.innerWidth, window.innerHeight);
         
         let isVRMode = false;
 
         // =====================================================================
-        // LUCES
+        // LUCES (Equilibradas para reflejos)
         // =====================================================================
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3); 
+        // Luz ambiental baja para que el mapa de entorno (reflejos) sea el protagonista
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); 
         scene.add(ambientLight);
 
-        const sunLight = new THREE.DirectionalLight(0xffffff, 0.8); 
+        // Luz direccional suave
+        const sunLight = new THREE.DirectionalLight(0xffffff, 0.6); 
         sunLight.position.set(-15, 25, 40); 
         sunLight.castShadow = true;
-        const d = 22; 
+        const d = 25; 
         sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
         sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-        sunLight.shadow.bias = -0.0005; 
         sunLight.shadow.mapSize.set(2048, 2048);
         scene.add(sunLight);
 
@@ -173,6 +174,7 @@
 
         async function init() {
             try {
+                // 1. CARGAR CUBEMAP
                 loadingText.innerText = "Cargando Entorno...";
                 const cubemapTexture = await new Promise((resolve, reject) => {
                     textureLoader.load('cubemap.jpg', resolve, undefined, reject);
@@ -183,17 +185,26 @@
                 pmremGenerator.compileEquirectangularShader();
                 const envMap = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
                 
+                // ASIGNAR ENTORNO
                 scene.environment = envMap; 
+                
+                // DEBUG: Muestra el mapa de fondo para confirmar que se ha cargado.
+                // Si ves esto, el archivo funciona. Si el objeto sigue mate, es culpa del GLB.
+                scene.background = envMap; 
+                // scene.backgroundBlurriness = 0.5; // Opcional: desenfocar fondo
                 
                 cubemapTexture.dispose();
                 pmremGenerator.dispose();
 
+                // 2. CARGAR ESTRUCTURA
                 loadingText.innerText = "Cargando Máquina...";
                 await loadStructure();
 
+                // 3. CARGAR SÍMBOLOS
                 loadingText.innerText = "Cargando Símbolos...";
                 await loadSymbolMasters();
 
+                // 4. MONTAR JUEGO
                 loadingText.innerText = "Iniciando...";
                 for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
 
@@ -202,7 +213,7 @@
                 animate();
 
             } catch (error) {
-                loadingText.innerText = "Error cargando archivos.";
+                loadingText.innerText = "Error (Ver consola)";
                 console.error(error);
             }
         }
@@ -215,6 +226,11 @@
                         if (node.isMesh) {
                             node.receiveShadow = true;
                             node.castShadow = true;
+                            // Aseguramos que el motor sepa que queremos usar el environment map
+                            // (No cambia el material, solo le dice a Three.js que lo aplique si es posible)
+                            if (node.material) {
+                                node.material.envMapIntensity = 1.0; 
+                            }
                         }
                     });
                     scene.add(model);
@@ -257,13 +273,15 @@
                     if (node.isMesh) {
                         node.castShadow = true; 
                         node.receiveShadow = true;
+                        // Asegurar intensidad de reflejos en clones también
+                        if (node.material) node.material.envMapIntensity = 1.0;
                     }
                 });
             }
         }
 
         // =====================================================================
-        // LÓGICA DE JUEGO
+        // GAMEPLAY
         // =====================================================================
         
         function spinMachine() {
@@ -280,12 +298,8 @@
 
         spinButton.addEventListener('click', spinMachine);
 
-        // Control táctil para VR (tocar cualquier parte de la pantalla)
         window.addEventListener('click', (e) => {
-            // Si estamos en VR y no se pulsó el botón de salir VR, giramos
-            if (isVRMode && e.target !== vrButton) {
-                spinMachine();
-            }
+            if (isVRMode && e.target !== vrButton) spinMachine();
         });
 
         function triggerStop(reelIndex) {
@@ -316,23 +330,18 @@
         }
 
         // =====================================================================
-        // CONTROL VR / PANTALLA
+        // VR TOGGLE & LOOP
         // =====================================================================
         
         vrButton.addEventListener('click', () => {
             isVRMode = !isVRMode;
-            
             if (isVRMode) {
-                // Entrar en VR
                 uiElements.forEach(el => el.classList.add('hidden-in-vr'));
-                // Intento de pantalla completa
                 if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
             } else {
-                // Salir de VR
                 uiElements.forEach(el => el.classList.remove('hidden-in-vr'));
                 if (document.exitFullscreen) document.exitFullscreen();
             }
-            
             adjustCamera();
         });
 
@@ -354,7 +363,6 @@
                     state.velocity += displacement * SPRING_TENSION;
                     state.velocity *= SPRING_DAMPING;
                     reel.rotation.x += state.velocity;
-
                     if (Math.abs(displacement) < 0.005 && Math.abs(state.velocity) < 0.005) {
                         reel.rotation.x = state.targetAngle; state.mode = 'IDLE'; state.velocity = 0;
                     }
@@ -367,7 +375,6 @@
                 checkResults();
             }
 
-            // RENDER LOOP: Decide si renderizar normal o Estéreo
             if (isVRMode) {
                 effect.render(scene, camera);
             } else {
@@ -379,7 +386,6 @@
             const width = window.innerWidth;
             const height = window.innerHeight;
             
-            // Actualizar ambos renderers
             renderer.setSize(width, height);
             effect.setSize(width, height);
 
@@ -387,8 +393,9 @@
             camera.aspect = aspect;
             camera.updateProjectionMatrix();
 
-            // Ajuste Z dinámico
-            if (aspect < 1.0) {
+            // Ajuste Z: En VR mantenemos la distancia base (o un poco más lejos si es necesario)
+            // En modo normal, ajustamos si la pantalla es muy estrecha.
+            if (aspect < 1.0 && !isVRMode) {
                 camera.position.z = BASE_CAMERA_Z / (aspect * 0.85); 
             } else {
                 camera.position.z = BASE_CAMERA_Z;

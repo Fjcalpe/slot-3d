@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: VR Distance & Reflections</title>
+    <title>Slot Pro: VR Focused & Shiny</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -55,7 +55,6 @@
             color: #aaa; box-shadow: 0 4px #222; cursor:not-allowed; transform: translateY(0px);
         }
 
-        /* Botón VR */
         #vr-btn {
             position: absolute; bottom: 20px; left: 20px; z-index: 30;
             background: rgba(0,0,0,0.5); border: 2px solid #fff;
@@ -111,8 +110,8 @@
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
         
-        // --- CÁMARA ALEJADA PARA VR ---
-        const BASE_CAMERA_Z = 48; // Aumentado de 34 a 48 para mejorar el enfoque visual
+        // CÁMARA ALEJADA (CONFORT VR)
+        const BASE_CAMERA_Z = 48; 
 
         let machineIsSpinning = false;
         const spinButton = document.getElementById('spin-btn');
@@ -146,19 +145,20 @@
         document.body.appendChild(renderer.domElement);
 
         const effect = new StereoEffect(renderer);
-        effect.eyeSeparation = 0.6; // Separación estándar para ojos humanos en VR móvil
+        // --- AJUSTE CLAVE VR ---
+        // 0.6 es la distancia real de los ojos (6cm), pero a veces cuesta enfocar en móvil.
+        // 0.05 pone las imágenes casi juntas. Si lo ves doble, súbelo a 0.1
+        effect.eyeSeparation = 0.05; 
         effect.setSize(window.innerWidth, window.innerHeight);
         
         let isVRMode = false;
 
         // =====================================================================
-        // LUCES (Equilibradas para reflejos)
+        // LUCES
         // =====================================================================
-        // Luz ambiental baja para que el mapa de entorno (reflejos) sea el protagonista
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); 
         scene.add(ambientLight);
 
-        // Luz direccional suave
         const sunLight = new THREE.DirectionalLight(0xffffff, 0.6); 
         sunLight.position.set(-15, 25, 40); 
         sunLight.castShadow = true;
@@ -185,13 +185,8 @@
                 pmremGenerator.compileEquirectangularShader();
                 const envMap = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
                 
-                // ASIGNAR ENTORNO
                 scene.environment = envMap; 
-                
-                // DEBUG: Muestra el mapa de fondo para confirmar que se ha cargado.
-                // Si ves esto, el archivo funciona. Si el objeto sigue mate, es culpa del GLB.
-                scene.background = envMap; 
-                // scene.backgroundBlurriness = 0.5; // Opcional: desenfocar fondo
+                scene.background = envMap; // Fondo visible para verificar que carga
                 
                 cubemapTexture.dispose();
                 pmremGenerator.dispose();
@@ -218,21 +213,27 @@
             }
         }
 
+        function forceReflections(node) {
+            if (node.isMesh && node.material) {
+                node.receiveShadow = true;
+                node.castShadow = true;
+                
+                // --- FORZADO DE REFLEJOS ---
+                // Si el modelo viene con Roughness 1.0 (Mate), no reflejará nada.
+                // Aquí lo forzamos a ser brillante y un poco metálico.
+                node.material.envMapIntensity = 1.5;
+                node.material.roughness = 0.1; // Muy liso (Brillante)
+                node.material.metalness = 0.6; // Medio metálico
+                
+                if (node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
+            }
+        }
+
         function loadStructure() {
             return new Promise((resolve, reject) => {
                 loader.load('cilindro.glb', (gltf) => {
                     const model = gltf.scene;
-                    model.traverse((node) => {
-                        if (node.isMesh) {
-                            node.receiveShadow = true;
-                            node.castShadow = true;
-                            // Aseguramos que el motor sepa que queremos usar el environment map
-                            // (No cambia el material, solo le dice a Three.js que lo aplique si es posible)
-                            if (node.material) {
-                                node.material.envMapIntensity = 1.0; 
-                            }
-                        }
-                    });
+                    model.traverse(forceReflections); // Aplicar brillo forzado
                     scene.add(model);
                     resolve();
                 }, undefined, reject);
@@ -269,14 +270,8 @@
                 pivot.add(rawModel);
                 reelGroup.add(pivot);
 
-                rawModel.traverse((node) => {
-                    if (node.isMesh) {
-                        node.castShadow = true; 
-                        node.receiveShadow = true;
-                        // Asegurar intensidad de reflejos en clones también
-                        if (node.material) node.material.envMapIntensity = 1.0;
-                    }
-                });
+                // Aplicar brillo forzado también a los clones
+                rawModel.traverse(forceReflections);
             }
         }
 
@@ -330,7 +325,7 @@
         }
 
         // =====================================================================
-        // VR TOGGLE & LOOP
+        // VR TOGGLE
         // =====================================================================
         
         vrButton.addEventListener('click', () => {
@@ -393,8 +388,6 @@
             camera.aspect = aspect;
             camera.updateProjectionMatrix();
 
-            // Ajuste Z: En VR mantenemos la distancia base (o un poco más lejos si es necesario)
-            // En modo normal, ajustamos si la pantalla es muy estrecha.
             if (aspect < 1.0 && !isVRMode) {
                 camera.position.z = BASE_CAMERA_Z / (aspect * 0.85); 
             } else {

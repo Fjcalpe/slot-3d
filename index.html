@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: VR Confortable</title>
+    <title>Slot Pro: HDRI Only Test</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -109,7 +109,6 @@
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
         
-        // Z=40: Distancia cómoda para que la vista no se canse
         const BASE_CAMERA_Z = 40; 
 
         let machineIsSpinning = false;
@@ -136,37 +135,26 @@
         const renderer = new THREE.WebGLRenderer({ antialias: true }); 
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio); 
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
+        // Sombras desactivadas porque no hay luz direccional
+        renderer.shadowMap.enabled = false; 
+        
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.0; 
+        // Subimos exposición porque ya no hay focos, solo el brillo de la imagen de fondo
+        renderer.toneMappingExposure = 1.2; 
         
         document.body.appendChild(renderer.domElement);
 
         const effect = new StereoEffect(renderer);
-        
-        // --- AJUSTE CRÍTICO DE CONFORT VISUAL ---
-        // 0.005 es una separación mínima. Elimina la visión doble.
-        // Hace que sea muy fácil enfocar con cardboard o bizqueando.
         effect.eyeSeparation = 0.005; 
         effect.setSize(window.innerWidth, window.innerHeight);
         
         let isVRMode = false;
 
         // =====================================================================
-        // LUCES
+        // LUCES ELIMINADAS (SOLO HDRI)
         // =====================================================================
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); 
-        scene.add(ambientLight);
-
-        const sunLight = new THREE.DirectionalLight(0xffffff, 0.8); 
-        sunLight.position.set(-15, 25, 40); 
-        sunLight.castShadow = true;
-        const d = 25; 
-        sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
-        sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-        sunLight.shadow.mapSize.set(2048, 2048);
-        scene.add(sunLight);
+        // Hemos quitado AmbientLight y DirectionalLight.
+        // Toda la iluminación vendrá de 'cubemap.jpg'
 
         const loader = new GLTFLoader();
         const textureLoader = new THREE.TextureLoader();
@@ -214,12 +202,13 @@
             }
         }
 
-        // --- SOLO SOMBRAS (Materiales Originales) ---
+        // --- SOLO GESTIÓN DE COLOR (SIN MODIFICAR MATERIALES) ---
         function setupModel(node) {
             if (node.isMesh) {
+                // Sin luz direccional, las sombras no se verán, pero dejamos la propiedad lista
                 node.receiveShadow = true;
                 node.castShadow = true;
-                // No tocamos roughness/metalness. Se usa el original del GLB.
+                
                 if (node.material && node.material.map) {
                     node.material.map.colorSpace = THREE.SRGBColorSpace;
                 }
@@ -380,7 +369,6 @@
             camera.aspect = aspect;
             camera.updateProjectionMatrix();
 
-            // Mantenemos la cámara alejada (Z=40) en ambos modos para consistencia
             if (aspect < 1.0 && !isVRMode) {
                 camera.position.z = BASE_CAMERA_Z / (aspect * 0.85); 
             } else {

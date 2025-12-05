@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slot Pro: Fixed Alignment & Color</title>
+    <title>Slot Pro: Optimized (No Scaling)</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -56,7 +56,7 @@
 </head>
 <body>
 
-    <div id="loading">Calibrando Rodillos...</div>
+    <div id="loading">Carga Directa (Optimizado)...</div>
     
     <div id="result-panel">
         <div id="result-text">LISTO</div>
@@ -86,12 +86,12 @@
         import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
         // =====================================================================
-        // 1. CONSTANTES
+        // 1. CONFIGURACIÓN
         // =====================================================================
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
         const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
 
-        // Si los símbolos siguen un poco altos o bajos, ajusta este valor (e.g., 0.1 o -0.1)
+        // Ajuste de rotación manual si en Blender miran hacia otro lado
         const AJUSTE_ROTACION_X = 0; 
         
         const NUM_CARRETES = 3;      
@@ -99,10 +99,10 @@
         const NUM_ITEMS_POR_RUEDA = 8; 
         const RADIO_CILINDRO_FONDO = 5.25; 
         const RADIO_ORBITA_SIMBOLOS = 6.0; 
-        const TAMANO_MODELO_FINAL = 3.5; 
+        // NOTA: TAMANO_MODELO_FINAL ya no se usa por código, se asume en el GLB (3.5m)
         const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
 
-        // FÍSICA Y TIEMPOS
+        // FÍSICA
         const MAX_SPEED = 0.50; 
         const SPIN_DURATION_MS = 1000; 
         const STOP_DELAY_MS = 300; 
@@ -118,7 +118,7 @@
         }));
 
         // =====================================================================
-        // 2. ESCENA & RENDERER (Corrección de Color)
+        // 2. RENDERER & ESCENA
         // =====================================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050505);
@@ -131,7 +131,7 @@
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         
-        // --- CAMBIO IMPORTANTE: ToneMapping para evitar el color blanco nuclear ---
+        // ToneMapping para evitar blancos quemados
         renderer.toneMapping = THREE.ACESFilmicToneMapping; 
         renderer.toneMappingExposure = 1.0;
         
@@ -139,26 +139,24 @@
 
         // --- COMPOSER ---
         const composer = new EffectComposer(renderer);
-        const renderPass = new RenderPass(scene, camera);
-        composer.addPass(renderPass);
+        composer.addPass(new RenderPass(scene, camera));
         
         const afterimagePass = new AfterimagePass();
         afterimagePass.uniforms['damp'].value = 0.0; 
         composer.addPass(afterimagePass);
 
-        const outputPass = new OutputPass();
-        composer.addPass(outputPass);
+        composer.addPass(new OutputPass());
 
         const clock = new THREE.Clock();
         const mixers = [];
 
         // =====================================================================
-        // 3. ILUMINACIÓN (Ajustada para no quemar blancos)
+        // 3. LUCES
         // =====================================================================
         const ambientLight = new THREE.AmbientLight(0xffffff, 1.2); 
         scene.add(ambientLight);
 
-        const sunLight = new THREE.DirectionalLight(0xffffff, 1.8); // Bajada de 2.5 a 1.8
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1.8); 
         sunLight.position.set(-15, 25, 40); 
         sunLight.castShadow = true;
         
@@ -170,8 +168,9 @@
         scene.add(sunLight);
 
         // =====================================================================
-        // 4. MODELOS (Limpieza de Materiales)
+        // 4. MODELOS (SIN ESCALADO AUTOMÁTICO)
         // =====================================================================
+        // Cilindro
         const cylinderGeo = new THREE.CylinderGeometry(RADIO_CILINDRO_FONDO, RADIO_CILINDRO_FONDO, 24, 64);
         const cylinderMat = new THREE.MeshStandardMaterial({ color: 0xfffdd0, roughness: 0.25, metalness: 0.0 });
         const backgroundCylinder = new THREE.Mesh(cylinderGeo, cylinderMat);
@@ -193,33 +192,32 @@
 
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
                 loader.load(ARCHIVOS_GLB[i % ARCHIVOS_GLB.length], (gltf) => {
-                    const rawModel = gltf.scene.clone(); 
+                    const rawModel = gltf.scene;
                     
-                    const box = new THREE.Box3().setFromObject(rawModel);
-                    const size = box.getSize(new THREE.Vector3());
-                    rawModel.position.sub(box.getCenter(new THREE.Vector3()));
-                    const scaleFactor = TAMANO_MODELO_FINAL / Math.max(size.x, size.y, size.z);
-                    rawModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
-
+                    // =========================================================
+                    // OPTIMIZACIÓN: Carga Directa sin Box3 ni SetScale
+                    // =========================================================
+                    // Asumimos que el modelo ya mide 3.5m en Z y está centrado.
+                    
                     const pivot = new THREE.Group();
                     pivot.rotation.x = (i * ANGLE_STEP);
                     
+                    // Posicionamos en órbita
                     rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
                     rawModel.rotation.x = AJUSTE_ROTACION_X;
 
                     pivot.add(rawModel);
                     reelGroup.add(pivot);
 
-                    // --- LIMPIEZA DE MATERIALES PARA EVITAR "BLANCOS" ---
+                    // Materiales (Crítico para evitar blancos y errores de blur)
                     rawModel.traverse((node) => {
                         if (node.isMesh) {
                             node.castShadow = true; 
                             node.receiveShadow = true;
-                            
-                            // IMPORTANTE: Desactivar transparent para que el Blur no se rompa
                             if (node.material) {
+                                // Evita que el blur se confunda y cree artefactos blancos
                                 node.material.transparent = false; 
-                                node.material.depthWrite = true; // Asegura que se escriba en el buffer de profundidad
+                                node.material.depthWrite = true; 
                                 if (node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
                             }
                         }
@@ -242,7 +240,7 @@
         for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
 
         // =====================================================================
-        // 5. LÓGICA DE JUEGO & FÍSICA DE PRECISIÓN
+        // 5. LÓGICA DE JUEGO (PRECISIÓN MILIMÉTRICA)
         // =====================================================================
         spinButton.addEventListener('click', () => {
             if (machineIsSpinning) return;
@@ -265,28 +263,23 @@
         function triggerStop(reelIndex) {
             const state = reelStates[reelIndex];
             state.mode = 'STOPPING';
-            const currentRotation = reels[reelIndex].rotation.x;
             
-            // --- CÁLCULO DE PRECISIÓN ---
-            // 1. Calculamos en qué paso (step) estamos actualmente redondeando
+            // Calculamos el ángulo objetivo EXACTO (Snap to Grid)
+            const currentRotation = reels[reelIndex].rotation.x;
             const currentStep = Math.round(currentRotation / ANGLE_STEP);
-            // 2. Sumamos vueltas extra para frenar
             const extraSpins = NUM_ITEMS_POR_RUEDA * 2; 
-            // 3. Fijamos el ángulo objetivo EXACTO
             state.targetAngle = (currentStep + extraSpins) * ANGLE_STEP;
         }
 
         function checkResults() {
-            // Aseguramos que el blur está apagado
-            afterimagePass.uniforms['damp'].value = 0.0;
+            afterimagePass.uniforms['damp'].value = 0.0; // Blur OFF asegurado
 
             const resultados = [];
             reels.forEach((reel) => {
-                // Normalización de ángulo positiva
                 let angle = reel.rotation.x % (Math.PI * 2);
                 if (angle < 0) angle += Math.PI * 2;
                 
-                // Alineación matemática al índice más cercano
+                // Alineación final matemática
                 const steps = Math.round(angle / ANGLE_STEP);
                 const index = (NUM_ITEMS_POR_RUEDA - (steps % NUM_ITEMS_POR_RUEDA)) % NUM_ITEMS_POR_RUEDA;
                 resultados.push(NOMBRES_SIMBOLOS[index]);
@@ -324,18 +317,15 @@
 
                 } else if (state.mode === 'STOPPING') {
                     allReelsIdle = false;
-                    // Distancia al objetivo
                     const displacement = state.targetAngle - reel.rotation.x;
                     
-                    // Física
                     state.velocity += displacement * SPRING_TENSION;
                     state.velocity *= SPRING_DAMPING;
                     reel.rotation.x += state.velocity;
 
-                    // --- SNAP TO GRID (Alineación Forzada) ---
-                    // Si estamos muy cerca y nos movemos muy lento, forzamos la posición final.
+                    // SNAP: Si está muy cerca, forzamos la posición final para corregir desfases
                     if (Math.abs(displacement) < 0.005 && Math.abs(state.velocity) < 0.005) {
-                        reel.rotation.x = state.targetAngle; // <--- ESTO CORRIGE EL DESFASE
+                        reel.rotation.x = state.targetAngle; 
                         state.mode = 'IDLE';
                         state.velocity = 0;
                     }
@@ -346,13 +336,11 @@
                 }
             });
 
-            // GESTIÓN DEL BLUR
+            // GESTIÓN DEL BLUR (Solo activo si hay velocidad real)
             if (maxCurrentVelocity > 0.1) {
-                // Blur intenso solo a alta velocidad
                 let targetDamp = Math.min(maxCurrentVelocity / MAX_SPEED, 1.0) * 0.92;
                 afterimagePass.uniforms['damp'].value = targetDamp;
             } else {
-                // Apagado rápido al frenar para ver los símbolos nítidos
                 afterimagePass.uniforms['damp'].value = 0.0;
             }
 

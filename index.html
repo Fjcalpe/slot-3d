@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Final Lighting Mix</title>
+    <title>Slot Pro: Sun Boost</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
         
@@ -136,32 +136,30 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio); 
         
-        // SOMBRAS ACTIVADAS DE NUEVO
         renderer.shadowMap.enabled = true; 
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.0; // Balanceado (HDRI + Sol)
+        renderer.toneMappingExposure = 1.0; 
         
         document.body.appendChild(renderer.domElement);
 
         const effect = new StereoEffect(renderer);
-        effect.eyeSeparation = 0.005; // VR cómodo
+        effect.eyeSeparation = 0.005; // Ajuste fino para VR
         effect.setSize(window.innerWidth, window.innerHeight);
         
         let isVRMode = false;
 
         // =====================================================================
-        // LUCES (Mix Balanceado)
+        // LUCES (Más Sol)
         // =====================================================================
         
-        // 1. Luz Ambiente "Flojita"
+        // 1. Luz Ambiente (Mantenemos suave para contraste)
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.3); 
         scene.add(ambientLight);
 
-        // 2. Luz de Sol (Sombras y Volumen)
-        // Intensidad moderada (0.8) para no quemar
-        const sunLight = new THREE.DirectionalLight(0xffffff, 0.8); 
+        // 2. Luz de Sol (Aumentada a 1.6)
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1.6); 
         sunLight.position.set(-15, 25, 40); 
         sunLight.castShadow = true;
         
@@ -191,7 +189,7 @@
                 const envMap = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
                 
                 scene.environment = envMap; 
-                scene.background = envMap; // Fondo visible (opcional)
+                scene.background = envMap; 
                 
                 cubemapTexture.dispose();
                 pmremGenerator.dispose();
@@ -218,12 +216,11 @@
             }
         }
 
-        // --- MODEL SETUP (Materiales Originales + Sombras) ---
+        // --- MODEL SETUP (Materiales Originales) ---
         function setupModel(node) {
             if (node.isMesh) {
                 node.receiveShadow = true;
                 node.castShadow = true;
-                
                 if (node.material && node.material.map) {
                     node.material.map.colorSpace = THREE.SRGBColorSpace;
                 }

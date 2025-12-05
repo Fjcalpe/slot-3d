@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Anaglyph Edition</title>
+    <title>Slot Pro: Cinematic Sequence</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -55,25 +55,15 @@
             color: #aaa; box-shadow: 0 4px #222; cursor:not-allowed; transform: translateY(0px);
         }
 
-        /* --- ESTILO BOTÓN ANAGLIFO --- */
-        #anaglyph-btn {
-            position: absolute; bottom: 20px; right: 20px; z-index: 30;
-            /* Degradado para indicar gafas Rojo/Cian */
-            background: linear-gradient(90deg, rgba(255,0,0,0.7) 50%, rgba(0,255,255,0.7) 50%);
-            border: 2px solid #fff;
-            color: #fff; border-radius: 50%; width: 60px; height: 60px;
-            font-size: 30px; cursor: pointer; display: flex;
+        #vr-btn {
+            position: absolute; bottom: 20px; left: 20px; z-index: 30;
+            background: rgba(0,0,0,0.5); border: 2px solid #fff;
+            color: #fff; border-radius: 50%; width: 50px; height: 50px;
+            font-size: 24px; cursor: pointer; display: flex;
             align-items: center; justify-content: center;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        #anaglyph-btn:active { transform: scale(0.95); }
-        #anaglyph-btn.active {
-            border-color: #ffd700;
-            box-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
         }
 
-        .hidden-ui { opacity: 0 !important; pointer-events: none !important; }
+        .hidden-in-vr { opacity: 0 !important; pointer-events: none !important; }
     </style>
 </head>
 <body>
@@ -86,7 +76,7 @@
 
     <div id="spin-container" class="ui-element"><button id="spin-btn" disabled>GIRAR</button></div>
     
-    <button id="anaglyph-btn" title="Modo 3D (Gafas Rojas/Azules)">👓</button>
+    <button id="vr-btn" title="Modo VR">👓</button>
 
     <script type="importmap">
         {
@@ -100,7 +90,7 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
+        import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
@@ -126,26 +116,26 @@
         
         // CÁMARA
         const Z_NORMAL = 28; 
-        const Z_ZOOM = 18;
-        const Z_ANAGLYPH = 30; // Un poco más lejos para efecto 3D cómodo
+        const Z_ZOOM = 18; // Primer plano
+        const Z_VR = 42;     
 
-        // MONEDAS
+        // =====================================================================
+        // CONFIGURACIÓN MONEDAS
+        // =====================================================================
         const COIN_COUNT = 150;      
-        const COIN_GRAVITY = 25.0;    
+        const COIN_GRAVITY = 25.0;   
         const COIN_BLAST_FORCE = 20; 
         const COIN_SPREAD = 10.0;     
         const COIN_SCALE = 0.8; 
 
         let machineIsSpinning = false;
         let isZoomed = false; 
-        let isAnaglyphMode = false;
         let targetZ = Z_NORMAL;
 
-        // ELEMENTOS DOM
         const spinButton = document.getElementById('spin-btn');
         const resultText = document.getElementById('result-text');
         const loadingText = document.getElementById('loading');
-        const anaglyphButton = document.getElementById('anaglyph-btn');
+        const vrButton = document.getElementById('vr-btn');
         const uiElements = document.querySelectorAll('.ui-element');
 
         const reelStates = Array(NUM_CARRETES).fill(null).map(() => ({
@@ -158,7 +148,6 @@
         const dummy = new THREE.Object3D(); 
         const coinsData = []; 
 
-        // Inicializar datos monedas
         for(let i=0; i<COIN_COUNT; i++) {
             coinsData.push({
                 position: new THREE.Vector3(),
@@ -182,21 +171,30 @@
         renderer.setPixelRatio(window.devicePixelRatio); 
         renderer.shadowMap.enabled = true; 
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
+        renderer.shadowMap.width = 2048;
+        renderer.shadowMap.height = 2048;
+        renderer.toneMapping = THREE.NoToneMapping; 
+        
         document.body.appendChild(renderer.domElement);
 
-        // EFECTOS
-        const effectAnaglyph = new AnaglyphEffect(renderer);
-        effectAnaglyph.setSize(window.innerWidth, window.innerHeight);
+        const effectVR = new StereoEffect(renderer);
+        effectVR.eyeSeparation = 0.005; 
+        effectVR.setSize(window.innerWidth, window.innerHeight);
         
         const composer = new EffectComposer(renderer);
         const renderPass = new RenderPass(scene, camera);
         composer.addPass(renderPass);
         
         const fxaaPass = new ShaderPass(FXAAShader);
+        const pixelRatio = renderer.getPixelRatio();
+        fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio);
+        fxaaPass.material.uniforms['resolution'].value.y = 1 / (window.innerHeight * pixelRatio);
         composer.addPass(fxaaPass);
 
         const outputPass = new OutputPass();
         composer.addPass(outputPass);
+
+        let isVRMode = false;
 
         // =====================================================================
         // LUCES
@@ -207,7 +205,12 @@
         const sunLight = new THREE.DirectionalLight(0xffffff, 1.8); 
         sunLight.position.set(-10, 30, 20); 
         sunLight.castShadow = true;
+        const d = 30; 
+        sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
         sunLight.shadow.mapSize.set(2048, 2048);
+        sunLight.shadow.bias = -0.0005; 
+        sunLight.shadow.radius = 2; 
         scene.add(sunLight);
 
         const loader = new GLTFLoader();
@@ -215,9 +218,6 @@
         const reels = []; 
         const clock = new THREE.Clock();
 
-        // =====================================================================
-        // INICIO
-        // =====================================================================
         async function init() {
             try {
                 loadingText.innerText = "Cargando Entorno...";
@@ -228,7 +228,8 @@
                 cubemapTexture.mapping = THREE.EquirectangularReflectionMapping;
                 const pmremGenerator = new THREE.PMREMGenerator(renderer);
                 pmremGenerator.compileEquirectangularShader();
-                scene.environment = pmremGenerator.fromEquirectangular(cubemapTexture).texture; 
+                const envMap = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
+                scene.environment = envMap; 
                 cubemapTexture.dispose();
                 pmremGenerator.dispose();
 
@@ -246,18 +247,15 @@
 
                 loadingText.style.opacity = 0;
                 spinButton.disabled = false;
-                onWindowResize();
                 animate();
 
             } catch (error) {
-                loadingText.innerText = "Error (Ver consola - Faltan archivos)";
+                loadingText.innerText = "Error (Ver consola)";
                 console.error(error);
             }
         }
 
-        // =====================================================================
-        // CARGA DE ASSETS
-        // =====================================================================
+        // --- SISTEMA DE MONEDAS ---
         function loadCoinSystem() {
             return new Promise((resolve, reject) => {
                 loader.load('moneda.glb', (gltf) => {
@@ -268,17 +266,25 @@
                             coinMaterial = node.material;
                         }
                     });
+
                     if (coinGeometry && coinMaterial) {
                         if (coinMaterial.map) coinMaterial.map.colorSpace = THREE.SRGBColorSpace;
-                        coinMaterial.metalness = 1.0; coinMaterial.roughness = 0.1; 
+                        coinMaterial.metalness = 1.0;
+                        coinMaterial.roughness = 0.1; 
+                        coinMaterial.envMapIntensity = 2.0;
+
                         coinInstancedMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, COIN_COUNT);
-                        coinInstancedMesh.castShadow = true; coinInstancedMesh.receiveShadow = true;
+                        coinInstancedMesh.castShadow = true;
+                        coinInstancedMesh.receiveShadow = true;
+                        coinInstancedMesh.frustumCulled = false; 
                         
-                        // Inicializar fuera de pantalla
                         for (let i = 0; i < COIN_COUNT; i++) {
-                            dummy.position.set(0, -500, 0); dummy.scale.set(0,0,0);
-                            dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix);
+                            dummy.position.set(0, -500, 0); 
+                            dummy.scale.set(0, 0, 0);
+                            dummy.updateMatrix();
+                            coinInstancedMesh.setMatrixAt(i, dummy.matrix);
                         }
+                        coinInstancedMesh.instanceMatrix.needsUpdate = true;
                         scene.add(coinInstancedMesh);
                     }
                     resolve();
@@ -286,14 +292,99 @@
             });
         }
 
+        function spawnCoins() {
+            for(let i=0; i < COIN_COUNT; i++) {
+                const data = coinsData[i];
+                data.active = true;
+                data.position.set(
+                    (Math.random() - 0.5) * COIN_SPREAD * 2, 
+                    -8.0, 
+                    12.0 + (Math.random() * 4.0)
+                );
+                data.velocity.set(
+                    (Math.random() - 0.5) * 10.0, 
+                    COIN_BLAST_FORCE + (Math.random() * 10), 
+                    (Math.random() - 0.5) * 5.0
+                );
+                data.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+                data.rotSpeed.set(
+                    (Math.random() - 0.5) * 15, 
+                    (Math.random() - 0.5) * 15, 
+                    (Math.random() - 0.5) * 15
+                );
+            }
+        }
+
+        function resetCoins() {
+            if (!coinInstancedMesh) return;
+            for(let i=0; i < COIN_COUNT; i++) {
+                coinsData[i].active = false;
+                dummy.position.set(0, -500, 0);
+                dummy.scale.set(0,0,0);
+                dummy.updateMatrix();
+                coinInstancedMesh.setMatrixAt(i, dummy.matrix);
+            }
+            coinInstancedMesh.instanceMatrix.needsUpdate = true;
+        }
+
+        function updateCoins(delta) {
+            if (!coinInstancedMesh) return;
+            let activeCount = 0;
+            for(let i=0; i < COIN_COUNT; i++) {
+                const data = coinsData[i];
+                if (data.active) {
+                    data.velocity.y -= COIN_GRAVITY * delta; 
+                    data.position.addScaledVector(data.velocity, delta);
+                    data.rotation.x += data.rotSpeed.x * delta;
+                    data.rotation.y += data.rotSpeed.y * delta;
+                    data.rotation.z += data.rotSpeed.z * delta;
+                    dummy.position.copy(data.position);
+                    dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
+                    dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE);
+                    dummy.updateMatrix();
+                    coinInstancedMesh.setMatrixAt(i, dummy.matrix);
+                    if (data.position.y < -30) {
+                        data.active = false;
+                        dummy.scale.set(0,0,0);
+                        dummy.updateMatrix();
+                        coinInstancedMesh.setMatrixAt(i, dummy.matrix);
+                    } else {
+                        activeCount++;
+                    }
+                }
+            }
+            if (activeCount > 0 || coinInstancedMesh.count > 0) {
+                coinInstancedMesh.instanceMatrix.needsUpdate = true;
+            }
+        }
+
+        // --- SETUP ---
+        function setupStructure(node) {
+            if (node.isMesh) {
+                node.castShadow = true;
+                node.receiveShadow = true; 
+                if (node.material && node.material.map) {
+                    node.material.map.colorSpace = THREE.SRGBColorSpace;
+                }
+            }
+        }
+
+        function setupSymbol(node) {
+             if (node.isMesh) {
+                node.castShadow = true;
+                node.receiveShadow = false; 
+                if (node.material && node.material.map) {
+                    node.material.map.colorSpace = THREE.SRGBColorSpace;
+                }
+            }
+        }
+
         function loadStructure() {
             return new Promise((resolve, reject) => {
                 loader.load('cilindro.glb', (gltf) => {
-                    gltf.scene.traverse(node => {
-                        if (node.isMesh) { node.castShadow = true; node.receiveShadow = true; 
-                        if (node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; }
-                    });
-                    scene.add(gltf.scene);
+                    const model = gltf.scene;
+                    model.traverse(setupStructure);
+                    scene.add(model);
                     resolve();
                 }, undefined, reject);
             });
@@ -328,35 +419,42 @@
                 rawModel.rotation.x = AJUSTE_ROTACION_X;
                 pivot.add(rawModel);
                 reelGroup.add(pivot);
-                
-                rawModel.traverse(node => {
-                    if (node.isMesh) { node.castShadow = true; 
-                    if (node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; }
-                });
+                rawModel.traverse(setupSymbol);
             }
         }
 
         // =====================================================================
-        // LÓGICA DE JUEGO
+        // LÓGICA DE JUEGO (COREOGRAFÍA)
         // =====================================================================
+        
         function spinMachine() {
             if (machineIsSpinning) return;
             machineIsSpinning = true;
+            
+            // RESET
             isZoomed = false; 
             adjustCameraTarget();
             resetCoins();
 
             spinButton.disabled = true;
             resultText.classList.remove('show');
-            resultText.style.borderColor = "#ffd700"; resultText.style.color = "#fff";
+            resultText.style.borderColor = "#ffd700";
+            resultText.style.color = "#fff";
 
             reelStates.forEach((state) => { state.mode = 'SPINNING'; state.velocity = 0; });
             for (let i = 0; i < NUM_CARRETES; i++) setTimeout(() => triggerStop(i), SPIN_DURATION_MS + (i * STOP_DELAY_MS));
         }
 
+        spinButton.addEventListener('click', spinMachine);
+
+        window.addEventListener('click', (e) => {
+            if (isVRMode && e.target !== vrButton) spinMachine();
+        });
+
         function triggerStop(reelIndex) {
             const state = reelStates[reelIndex];
             state.mode = 'STOPPING';
+            // Hack: Siempre gana
             const currentRotation = reels[reelIndex].rotation.x;
             const fullCircle = Math.PI * 2;
             const nextSafeRound = Math.ceil(currentRotation / fullCircle);
@@ -376,48 +474,61 @@
             resultText.innerText = resultados.join("  -  ");
             resultText.classList.add('show');
             
+            // --- SECUENCIA DE VICTORIA ---
             if (resultados[0] === resultados[1] && resultados[1] === resultados[2]) {
-                resultText.style.borderColor = "#00ff00"; resultText.style.color = "#00ff00";
+                resultText.style.borderColor = "#00ff00";
+                resultText.style.color = "#00ff00";
                 resultText.innerText += " ¡PREMIO!";
-                isZoomed = true; adjustCameraTarget();
+                
+                // PASO 1: ACERCAR CÁMARA (Zoom In)
+                isZoomed = true;
+                adjustCameraTarget();
+                
+                // PASO 2: ESPERAR 1.5s (Viendo los rodillos)
                 setTimeout(() => {
-                    isZoomed = false; adjustCameraTarget();
-                    setTimeout(spawnCoins, 800);
+                    // PASO 3: ALEJAR CÁMARA (Zoom Out)
+                    isZoomed = false;
+                    adjustCameraTarget();
+
+                    // PASO 4: ESPERAR A QUE SE ALEJE UN POCO (0.8s) Y LANZAR MONEDAS
+                    setTimeout(() => {
+                        spawnCoins();
+                    }, 800);
+
                 }, 1500);
             }
         }
 
-        // =====================================================================
-        // INTERACCIÓN Y BOTONES
-        // =====================================================================
-        spinButton.addEventListener('click', spinMachine);
-
-        anaglyphButton.addEventListener('click', () => {
-            isAnaglyphMode = !isAnaglyphMode;
-            if (isAnaglyphMode) {
-                anaglyphButton.classList.add('active');
+        vrButton.addEventListener('click', () => {
+            isVRMode = !isVRMode;
+            if (isVRMode) {
+                uiElements.forEach(el => el.classList.add('hidden-in-vr'));
+                if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
             } else {
-                anaglyphButton.classList.remove('active');
+                uiElements.forEach(el => el.classList.remove('hidden-in-vr'));
+                if (document.exitFullscreen) document.exitFullscreen();
             }
             adjustCameraTarget();
-            onWindowResize();
         });
 
-        // =====================================================================
-        // LOOP DE ANIMACIÓN
-        // =====================================================================
         function animate() {
             requestAnimationFrame(animate);
             const delta = clock.getDelta(); 
             updateCoins(delta);
 
             // Interpolación de cámara
-            camera.position.z += (targetZ - camera.position.z) * 0.05;
+            if (!isVRMode) { 
+                 camera.position.z += (targetZ - camera.position.z) * 0.05;
+            } else {
+                 camera.position.z = Z_VR; 
+            }
 
             let allReelsIdle = true;
+
             reels.forEach((reel, i) => {
                 if (!reel) return;
                 const state = reelStates[i];
+
                 if (state.mode === 'SPINNING') {
                     allReelsIdle = false;
                     if (state.velocity < MAX_SPEED) state.velocity += 0.02; 
@@ -435,80 +546,31 @@
             });
 
             if (allReelsIdle && machineIsSpinning) {
-                machineIsSpinning = false; spinButton.disabled = false; checkResults();
+                machineIsSpinning = false;
+                spinButton.disabled = false;
+                checkResults();
             }
 
-            if (isAnaglyphMode) {
-                effectAnaglyph.render(scene, camera);
+            if (isVRMode) {
+                effectVR.render(scene, camera);
             } else {
                 composer.render();
             }
         }
 
-        // =====================================================================
-        // UTILIDADES Y MONEDAS
-        // =====================================================================
-        function spawnCoins() {
-            for(let i=0; i < COIN_COUNT; i++) {
-                const data = coinsData[i];
-                data.active = true;
-                data.position.set((Math.random()-0.5)*COIN_SPREAD*2, -8.0, 12.0+(Math.random()*4.0));
-                data.velocity.set((Math.random()-0.5)*10.0, COIN_BLAST_FORCE+(Math.random()*10), (Math.random()-0.5)*5.0);
-                data.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
-                data.rotSpeed.set((Math.random()-0.5)*15, (Math.random()-0.5)*15, (Math.random()-0.5)*15);
-            }
-        }
-
-        function updateCoins(delta) {
-            if (!coinInstancedMesh) return;
-            let activeCount = 0;
-            for(let i=0; i < COIN_COUNT; i++) {
-                const data = coinsData[i];
-                if (data.active) {
-                    data.velocity.y -= COIN_GRAVITY * delta; 
-                    data.position.addScaledVector(data.velocity, delta);
-                    data.rotation.x += data.rotSpeed.x * delta;
-                    data.rotation.y += data.rotSpeed.y * delta;
-                    data.rotation.z += data.rotSpeed.z * delta;
-                    dummy.position.copy(data.position);
-                    dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
-                    dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE);
-                    dummy.updateMatrix();
-                    coinInstancedMesh.setMatrixAt(i, dummy.matrix);
-                    if (data.position.y < -30) {
-                        data.active = false; dummy.scale.set(0,0,0); dummy.updateMatrix();
-                        coinInstancedMesh.setMatrixAt(i, dummy.matrix);
-                    } else activeCount++;
-                }
-            }
-            if (activeCount > 0 || coinInstancedMesh.count > 0) coinInstancedMesh.instanceMatrix.needsUpdate = true;
-        }
-
-        function resetCoins() {
-            if (!coinInstancedMesh) return;
-            for(let i=0; i < COIN_COUNT; i++) {
-                coinsData[i].active = false; dummy.position.set(0,-500,0); dummy.scale.set(0,0,0);
-                dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix);
-            }
-            coinInstancedMesh.instanceMatrix.needsUpdate = true;
-        }
-
-        // =====================================================================
-        // RESPONSIVE / CÁMARA
-        // =====================================================================
         function adjustCameraTarget() {
             const width = window.innerWidth;
             const height = window.innerHeight;
             const aspect = width / height;
 
             let idealZ = Z_NORMAL;
-            if (isZoomed) idealZ = Z_ZOOM;
-            // Un poco más de distancia base en modo anaglifo para confort
-            else if (isAnaglyphMode) idealZ = Z_ANAGLYPH;
+            if (isVRMode) {
+                idealZ = Z_VR; 
+            } else if (isZoomed) {
+                idealZ = Z_ZOOM;
+            }
 
-            // Si es pantalla vertical (móvil), alejar cámara proporcionalmente
-            // Esto funciona tanto en modo normal como en 3D
-            if (aspect < 1.0) {
+            if (aspect < 1.0 && !isVRMode) {
                 targetZ = idealZ / (aspect * 0.85);
             } else {
                 targetZ = idealZ;
@@ -520,21 +582,24 @@
             const height = window.innerHeight;
             
             renderer.setSize(width, height);
-            effectAnaglyph.setSize(width, height);
+            effectVR.setSize(width, height);
             composer.setSize(width, height);
 
             const pixelRatio = renderer.getPixelRatio();
             fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio);
             fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
 
-            camera.aspect = width / height;
+            const aspect = width / height;
+            camera.aspect = aspect;
             camera.updateProjectionMatrix();
+            
             adjustCameraTarget();
         }
 
         window.addEventListener('resize', onWindowResize);
         window.addEventListener('orientationchange', () => setTimeout(onWindowResize, 100));
         
+        onWindowResize();
         init();
     </script>
 </body>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: ALWAYS WIN (Debug)</title>
+    <title>Slot Pro: Coin Fountain Final</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -117,13 +117,13 @@
         const Z_VR = 42;     
 
         // =====================================================================
-        // CONFIGURACIÓN DE PARTÍCULAS (MONEDAS)
+        // CONFIGURACIÓN MONEDAS
         // =====================================================================
         const COIN_COUNT = 150;      
         const COIN_GRAVITY = 25.0;   
-        const COIN_BLAST_FORCE = 18; 
-        const COIN_SPREAD = 6.0;     
-        const COIN_SCALE = 0.8;      
+        const COIN_BLAST_FORCE = 20; 
+        const COIN_SPREAD = 10.0;     
+        const COIN_SCALE = 0.8; // Si siguen sin verse, prueba a cambiar esto a 5.0 temporalmente
 
         let machineIsSpinning = false;
         const spinButton = document.getElementById('spin-btn');
@@ -249,7 +249,7 @@
             }
         }
 
-        // --- SISTEMA DE MONEDAS ---
+        // --- SISTEMA DE MONEDAS (CORREGIDO) ---
         function loadCoinSystem() {
             return new Promise((resolve, reject) => {
                 loader.load('moneda.glb', (gltf) => {
@@ -264,14 +264,19 @@
                     if (coinGeometry && coinMaterial) {
                         if (coinMaterial.map) coinMaterial.map.colorSpace = THREE.SRGBColorSpace;
                         coinMaterial.metalness = 1.0;
-                        coinMaterial.roughness = 0.2; 
+                        coinMaterial.roughness = 0.1; // Oro muy brillante
+                        coinMaterial.envMapIntensity = 2.0; // Reflejos extra fuertes
 
                         coinInstancedMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, COIN_COUNT);
                         coinInstancedMesh.castShadow = true;
                         coinInstancedMesh.receiveShadow = true;
                         
+                        // FIX: Evita que desaparezcan si la cámara no mira al centro
+                        coinInstancedMesh.frustumCulled = false; 
+                        
                         for (let i = 0; i < COIN_COUNT; i++) {
-                            dummy.position.set(0, -100, 0);
+                            // Esconderlas lejos inicialmente
+                            dummy.position.set(0, -500, 0); 
                             dummy.scale.set(0, 0, 0);
                             dummy.updateMatrix();
                             coinInstancedMesh.setMatrixAt(i, dummy.matrix);
@@ -288,10 +293,26 @@
             for(let i=0; i < COIN_COUNT; i++) {
                 const data = coinsData[i];
                 data.active = true;
-                data.position.set((Math.random() - 0.5) * COIN_SPREAD * 2, -2.0, (Math.random() - 0.5) * 4.0);
-                data.velocity.set((Math.random() - 0.5) * 8.0, COIN_BLAST_FORCE + (Math.random() * 10), (Math.random() - 0.5) * 5.0 + 8.0);
+                
+                // FIX: Posición Z adelantada (12.0) para que salgan delante de la máquina
+                data.position.set(
+                    (Math.random() - 0.5) * 10.0,  // X
+                    -8.0,                          // Y (Desde abajo)
+                    12.0 + (Math.random() * 4.0)   // Z (Delante)
+                );
+
+                data.velocity.set(
+                    (Math.random() - 0.5) * 10.0, 
+                    COIN_BLAST_FORCE + (Math.random() * 10), 
+                    (Math.random() - 0.5) * 5.0
+                );
+
                 data.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
-                data.rotSpeed.set((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10);
+                data.rotSpeed.set(
+                    (Math.random() - 0.5) * 15, 
+                    (Math.random() - 0.5) * 15, 
+                    (Math.random() - 0.5) * 15
+                );
             }
         }
 
@@ -303,14 +324,18 @@
                 if (data.active) {
                     data.velocity.y -= COIN_GRAVITY * delta; 
                     data.position.addScaledVector(data.velocity, delta);
+                    
                     data.rotation.x += data.rotSpeed.x * delta;
                     data.rotation.y += data.rotSpeed.y * delta;
                     data.rotation.z += data.rotSpeed.z * delta;
+                    
                     dummy.position.copy(data.position);
                     dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
                     dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE);
                     dummy.updateMatrix();
+                    
                     coinInstancedMesh.setMatrixAt(i, dummy.matrix);
+                    
                     if (data.position.y < -30) {
                         data.active = false;
                         dummy.scale.set(0,0,0);
@@ -392,7 +417,7 @@
         }
 
         // =====================================================================
-        // LÓGICA TRUCADA: SIEMPRE GANA (VISUALMENTE ALINEADO)
+        // TRUCO: ALWAYS WIN
         // =====================================================================
         
         function spinMachine() {
@@ -418,25 +443,16 @@
             state.mode = 'STOPPING';
             
             // --- HACK PARA GANAR SIEMPRE ---
-            // Calculamos exactamente cuantas vueltas dar para que pare en 0 grados (Símbolo 1)
             const currentRotation = reels[reelIndex].rotation.x;
             const fullCircle = Math.PI * 2;
-            
-            // Redondeamos hacia arriba a la siguiente vuelta completa
             const nextSafeRound = Math.ceil(currentRotation / fullCircle);
-            
-            // Añadimos unas vueltas extra fijas + el índice para que paren en cascada
-            // Al ser un número entero de vueltas ( * fullCircle), siempre caerá en el mismo punto.
             const targetRounds = nextSafeRound + 2 + reelIndex; 
-            
             state.targetAngle = targetRounds * fullCircle;
         }
 
         function checkResults() {
              const resultados = [];
             reels.forEach((reel) => {
-                // Al haber forzado la parada, el ángulo será múltiplo de 2PI,
-                // por lo que el índice siempre será el mismo.
                 let angle = reel.rotation.x % (Math.PI * 2);
                 if (angle < 0) angle += Math.PI * 2;
                 const steps = Math.round(angle / ANGLE_STEP);
@@ -446,13 +462,13 @@
             resultText.innerText = resultados.join("  -  ");
             resultText.classList.add('show');
             
-            // --- LA CONDICIÓN AHORA SIEMPRE SE CUMPLE ---
+            // SIEMPRE SERÁ VERDADERO
             if (resultados[0] === resultados[1] && resultados[1] === resultados[2]) {
                 resultText.style.borderColor = "#00ff00";
                 resultText.style.color = "#00ff00";
                 resultText.innerText += " ¡PREMIO!";
                 
-                // ¡LLUVIA DE MONEDAS!
+                // DISPARAR MONEDAS
                 spawnCoins();
             }
         }

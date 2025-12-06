@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Mobile Optimized</title>
+    <title>Slot Pro: Sirena Perf Test</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -88,7 +88,7 @@
 </head>
 <body>
 
-    <div id="loading">Cargando Recursos...</div>
+    <div id="loading">Cargando Recursos (Solo Sirena)...</div>
     
     <div id="result-panel" class="ui-element">
         <div id="result-text">LISTO</div>
@@ -159,8 +159,12 @@
         // =====================================================================
         // CONFIGURACIÓN THREE.JS
         // =====================================================================
-        const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
-        const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
+        
+        // --- CAMBIO PARA TEST DE RENDIMIENTO (SOLO SIRENA) ---
+        const ARCHIVOS_GLB = ['sirena.glb']; // Solo usamos este
+        // Rellenamos el array de nombres con "Sirena" para las 8 posiciones
+        const NOMBRES_SIMBOLOS = Array(8).fill('Sirena'); 
+        
         const AJUSTE_ROTACION_X = 0; 
         const NUM_CARRETES = 3;        
         const SEPARACION_CARRETES = 4.5; 
@@ -173,7 +177,10 @@
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
         
-        const Z_NORMAL = 28; const Z_ZOOM = 18; const Z_VR = 42;        
+        // --- CAMBIO DE CÁMARA (ZOOM IN DESKTOP) ---
+        // Se ha reducido Z_NORMAL de 28 a 22, y Z_ZOOM de 18 a 14
+        const Z_NORMAL = 22; const Z_ZOOM = 14; const Z_VR = 42;        
+        
         const COIN_COUNT = 150; const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8; 
 
         const raycaster = new THREE.Raycaster();
@@ -208,7 +215,6 @@
         const exitFsBtn = document.getElementById('exit-fs-btn');
         const landscapeOverlay = document.getElementById('landscape-overlay');
         const enterFsBtn = document.getElementById('enter-fs-btn');
-        // Regex simple para detectar dispositivos móviles
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 
@@ -353,7 +359,6 @@
                 for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
                 loadingText.style.opacity = 0;
                 
-                // Comprobación inicial de orientación
                 checkOrientation();
                 
                 animate();
@@ -465,6 +470,7 @@
         }
 
         function loadSymbolMasters() {
+            // Solo cargamos los únicos (en este caso solo 'sirena.glb')
             const uniqueFiles = [...new Set(ARCHIVOS_GLB)];
             const promises = uniqueFiles.map(file => new Promise((resolve, reject) => loader.load(file, (gltf) => { symbolMasters[file] = gltf.scene; resolve(); }, undefined, reject)));
             return Promise.all(promises);
@@ -475,6 +481,7 @@
             const posX = (indicePosicion * SEPARACION_CARRETES) - ((NUM_CARRETES - 1) * SEPARACION_CARRETES / 2);
             reelGroup.position.x = posX; scene.add(reelGroup); reels.push(reelGroup);
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
+                // Siempre usamos 'sirena.glb' porque es el único elemento en ARCHIVOS_GLB
                 const fileName = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
                 const rawModel = symbolMasters[fileName].clone();
                 const pivot = new THREE.Group();
@@ -494,7 +501,6 @@
         }
 
         window.addEventListener('click', (e) => {
-            // Evitar que el click en los nuevos botones active la máquina
             if (e.target === exitFsBtn || e.target === enterFsBtn) return;
 
             if (isVRMode && e.target !== vrButton && !e.target.closest('.panel')) {
@@ -633,14 +639,13 @@
         }
 
         // =====================================================================
-        // AJUSTE DE CÁMARA (SOLUCIÓN PARA MÓVIL VERTICAL)
+        // AJUSTE DE CÁMARA (SOLUCIÓN PARA MÓVIL VERTICAL Y DESKTOP)
         // =====================================================================
         function adjustCameraTarget() {
             const width = window.innerWidth; const height = window.innerHeight; const aspect = width / height;
             let idealZ = Z_NORMAL; if (isVRMode) idealZ = Z_VR; else if (isZoomed) idealZ = Z_ZOOM;
             
-            // CAMBIO CLAVE: Si el aspecto es menor a 1 (vertical), dividimos por un número mayor (1.35 en vez de 0.85)
-            // Esto hace que el resultado 'targetZ' sea más pequeño, acercando la cámara.
+            // Si el aspecto es menor a 1 (vertical), dividimos por un número mayor (1.35) para acercar
             if (aspect < 1.0 && !isVRMode) targetZ = idealZ / (aspect * 1.35); else targetZ = idealZ;
         }
 

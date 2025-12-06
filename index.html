@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Cinematic Sequence</title>
+    <title>Slot Pro: Standard Render</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -36,25 +36,6 @@
         }
         #result-text.show { opacity: 1; transform: translateY(0); }
 
-        #spin-container {
-            position: absolute; bottom: 5vh; width: 100%; text-align: center; z-index: 20;
-            transition: opacity 0.3s;
-        }
-        #spin-btn {
-            background: linear-gradient(to bottom, #ff4500, #c72c00);
-            border: 3px solid #ffd700; border-radius: 10px;
-            color: #ffd700; font-size: 1.5rem; font-weight: bold;
-            padding: 15px 40px; cursor: pointer;
-            box-shadow: 0 4px #992200, 0 0 15px #ff4500aa;
-            text-shadow: 1px 1px 2px #000; transition: all 0.1s;
-            touch-action: manipulation; 
-        }
-        #spin-btn:active { transform: translateY(4px); box-shadow: 0 0px #992200; }
-        #spin-btn:disabled {
-            background: linear-gradient(to bottom, #555, #333); border-color: #777;
-            color: #aaa; box-shadow: 0 4px #222; cursor:not-allowed; transform: translateY(0px);
-        }
-
         #vr-btn {
             position: absolute; bottom: 20px; left: 20px; z-index: 30;
             background: rgba(0,0,0,0.5); border: 2px solid #fff;
@@ -63,7 +44,21 @@
             align-items: center; justify-content: center;
         }
 
+        /* --- ESTILOS DE PANELES (Ocultos) --- */
+        .panel {
+            position: absolute; top: 10px;
+            width: 270px; max-height: 90vh; overflow-y: auto;
+            background: rgba(0, 0, 0, 0.9); 
+            border: 1px solid #ffd700; color: #eee; padding: 15px; 
+            border-radius: 8px; font-size: 11px; z-index: 100;
+            font-family: monospace;
+        }
         .hidden-in-vr { opacity: 0 !important; pointer-events: none !important; }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #222; }
+        ::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
     </style>
 </head>
 <body>
@@ -74,8 +69,6 @@
         <div id="result-text">LISTO</div>
     </div>
 
-    <div id="spin-container" class="ui-element"><button id="spin-btn" disabled>GIRAR</button></div>
-    
     <button id="vr-btn" title="Modo VR">👓</button>
 
     <script type="importmap">
@@ -94,16 +87,50 @@
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'; 
         import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
         import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
         // =====================================================================
-        // CONFIGURACIÓN GENERAL
+        // PARÁMETROS GLOBALES
+        // =====================================================================
+        const params = {
+            // Bloom
+            bloomThreshold: 1.29, bloomStrength: 0.2, bloomRadius: 0.06,
+            // Botón
+            btnColor: "#ffffff", btnIdle: 0.0, btnHover: 0.7, btnClick: 20.8,
+            // Flecha
+            arrColor: "#fff68f", arrIdle: 0.2, arrHover: 0.6, arrClick: 14.8,
+            // Luz Puntual (Hover)
+            lHovColor: "#ffaa00", lHovInt: 200, lHovDist: 22,
+            // Luz Puntual (Click)
+            lClkColor: "#ffe6aa", lClkInt: 576, lClkDist: 134,
+            // Luz Sol
+            sunColor: "#fffee0", sunInt: 3.0,
+            // Luz Ambiente
+            ambColor: "#ffffff", ambInt: 0.6,
+            // Luz Relleno
+            fillColor: "#fffee0", fillInt: 2.0
+        };
+
+        const bind = (id, paramKey, displayId, isColor = false, cb) => {
+            const el = document.getElementById(id);
+            if(!el) return;
+            if(isColor) {
+                el.addEventListener('input', e => { params[paramKey] = e.target.value; if(cb) cb(e.target.value); });
+            } else {
+                el.addEventListener('input', e => { params[paramKey] = parseFloat(e.target.value); if(displayId) document.getElementById(displayId).innerText = params[paramKey]; if(cb) cb(params[paramKey]); });
+            }
+        };
+
+        // =====================================================================
+        // CONFIGURACIÓN THREE.JS
         // =====================================================================
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
         const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
         const AJUSTE_ROTACION_X = 0; 
-        const NUM_CARRETES = 3;      
+        const NUM_CARRETES = 3;        
         const SEPARACION_CARRETES = 4.5; 
         const NUM_ITEMS_POR_RUEDA = 8; 
         const RADIO_ORBITA_SIMBOLOS = 6.0; 
@@ -114,65 +141,57 @@
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
         
-        // CÁMARA
-        const Z_NORMAL = 28; 
-        const Z_ZOOM = 18; // Primer plano
-        const Z_VR = 42;     
+        const Z_NORMAL = 28; const Z_ZOOM = 18; const Z_VR = 42;        
+        const COIN_COUNT = 150; const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8; 
 
-        // =====================================================================
-        // CONFIGURACIÓN MONEDAS
-        // =====================================================================
-        const COIN_COUNT = 150;      
-        const COIN_GRAVITY = 25.0;   
-        const COIN_BLAST_FORCE = 20; 
-        const COIN_SPREAD = 10.0;     
-        const COIN_SCALE = 0.8; 
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        
+        let spinButtonMesh = null; 
+        let spinArrowMesh = null;  
+        let spinGroup = null;      
+        
+        let pointLight = null;
+        let isLightFlashing = false;
 
+        let buttonMixer = null;      
+        let buttonAction = null;     
+        let isButtonAnimating = false; 
+        
         let machineIsSpinning = false;
+        let isButtonDisabled = false;
         let isZoomed = false; 
         let targetZ = Z_NORMAL;
+        
+        const ANIM_FPS = 30;
+        const TIME_Hover = 10 / ANIM_FPS;        
+        const TIME_ClickEnd = 8 / ANIM_FPS;     
 
-        const spinButton = document.getElementById('spin-btn');
         const resultText = document.getElementById('result-text');
         const loadingText = document.getElementById('loading');
         const vrButton = document.getElementById('vr-btn');
         const uiElements = document.querySelectorAll('.ui-element');
 
-        const reelStates = Array(NUM_CARRETES).fill(null).map(() => ({
-            mode: 'IDLE', velocity: 0, targetAngle: 0
-        }));
-
+        const reelStates = Array(NUM_CARRETES).fill(null).map(() => ({ mode: 'IDLE', velocity: 0, targetAngle: 0 }));
         const symbolMasters = {};
-        
         let coinInstancedMesh;
         const dummy = new THREE.Object3D(); 
         const coinsData = []; 
+        for(let i=0; i<COIN_COUNT; i++) coinsData.push({ position: new THREE.Vector3(), velocity: new THREE.Vector3(), rotation: new THREE.Euler(), rotSpeed: new THREE.Vector3(), active: false });
 
-        for(let i=0; i<COIN_COUNT; i++) {
-            coinsData.push({
-                position: new THREE.Vector3(),
-                velocity: new THREE.Vector3(),
-                rotation: new THREE.Euler(),
-                rotSpeed: new THREE.Vector3(),
-                active: false
-            });
-        }
-
-        // =====================================================================
-        // RENDERER
-        // =====================================================================
+        // --- RENDERER ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x000000); 
+        scene.background = new THREE.Color(0x050505); 
         
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 150);
         
-        const renderer = new THREE.WebGLRenderer({ antialias: true }); 
+        const renderer = new THREE.WebGLRenderer({ antialias: false }); 
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio); 
         renderer.shadowMap.enabled = true; 
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
-        renderer.shadowMap.width = 2048;
-        renderer.shadowMap.height = 2048;
+        
+        // --- RESTAURADO A NO TONE MAPPING (Como pediste) ---
         renderer.toneMapping = THREE.NoToneMapping; 
         
         document.body.appendChild(renderer.domElement);
@@ -185,6 +204,12 @@
         const renderPass = new RenderPass(scene, camera);
         composer.addPass(renderPass);
         
+        let bloomPass;
+        try {
+            bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), params.bloomStrength, params.bloomRadius, params.bloomThreshold);
+            composer.addPass(bloomPass);
+        } catch (e) { console.warn("Error creating BloomPass:", e); }
+
         const fxaaPass = new ShaderPass(FXAAShader);
         const pixelRatio = renderer.getPixelRatio();
         fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio);
@@ -197,95 +222,116 @@
         let isVRMode = false;
 
         // =====================================================================
-        // LUCES
+        // SETUP LUCES (GIZMOS OCULTOS)
         // =====================================================================
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
+        
+        const ambientLight = new THREE.AmbientLight(params.ambColor, params.ambInt); 
         scene.add(ambientLight);
 
-        const sunLight = new THREE.DirectionalLight(0xffffff, 1.8); 
+        const sunLight = new THREE.DirectionalLight(params.sunColor, params.sunInt); 
         sunLight.position.set(-10, 30, 20); 
         sunLight.castShadow = true;
-        const d = 30; 
-        sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
-        sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-        sunLight.shadow.mapSize.set(2048, 2048);
-        sunLight.shadow.bias = -0.0005; 
-        sunLight.shadow.radius = 2; 
+        const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.mapSize.set(2048, 2048); sunLight.shadow.bias = -0.0005; sunLight.shadow.radius = 2; 
         scene.add(sunLight);
+
+        const fillPivot = new THREE.Object3D();
+        fillPivot.rotation.set(-3.06, -1.36, -2.31); 
+        scene.add(fillPivot);
+
+        const fillLight = new THREE.DirectionalLight(params.fillColor, params.fillInt);
+        fillLight.position.set(-8.10, -4.57, -7.28); 
+        fillPivot.add(fillLight); 
+        
+        // const fillLightHelper = new THREE.DirectionalLightHelper(fillLight, 2); scene.add(fillLightHelper);
+        // const fillGizmo = new TransformControls(camera, renderer.domElement); fillGizmo.attach(fillLight); scene.add(fillGizmo);
+
+        pointLight = new THREE.PointLight(0xffaa00, 0, 100);
+        pointLight.position.set(0, -5, 12); 
+        pointLight.castShadow = false;
+        scene.add(pointLight);
+
+        // const pointLightHelper = new THREE.PointLightHelper(pointLight, 0.5); scene.add(pointLightHelper);
+        // const pointLightGizmo = new TransformControls(camera, renderer.domElement); pointLightGizmo.attach(pointLight); scene.add(pointLightGizmo);
 
         const loader = new GLTFLoader();
         const textureLoader = new THREE.TextureLoader();
         const reels = []; 
         const clock = new THREE.Clock();
 
-        async function init() {
-            try {
-                loadingText.innerText = "Cargando Entorno...";
-                const cubemapTexture = await new Promise((resolve, reject) => {
-                    textureLoader.load('cubemap.jpg', resolve, undefined, reject);
-                });
-                
-                cubemapTexture.mapping = THREE.EquirectangularReflectionMapping;
-                const pmremGenerator = new THREE.PMREMGenerator(renderer);
-                pmremGenerator.compileEquirectangularShader();
-                const envMap = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
-                scene.environment = envMap; 
-                cubemapTexture.dispose();
-                pmremGenerator.dispose();
+        // =====================================================================
+        // INTERACCIÓN
+        // =====================================================================
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerdown', onPointerDown);
 
-                loadingText.innerText = "Cargando Máquina...";
-                await loadStructure();
+        function onPointerMove(event) {
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+        }
 
-                loadingText.innerText = "Cargando Monedas...";
-                await loadCoinSystem();
+        function onPointerDown(event) {
+            if (isVRMode) return;
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+            
+            if (event.target.closest('.panel')) return; 
+            if (isButtonDisabled) return;
 
-                loadingText.innerText = "Cargando Símbolos...";
-                await loadSymbolMasters();
-
-                loadingText.innerText = "Iniciando...";
-                for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
-
-                loadingText.style.opacity = 0;
-                spinButton.disabled = false;
-                animate();
-
-            } catch (error) {
-                loadingText.innerText = "Error (Ver consola)";
-                console.error(error);
+            if (spinGroup) {
+                const intersects = raycaster.intersectObject(spinGroup, true);
+                if (intersects.length > 0) {
+                    if(spinButtonMesh) { spinButtonMesh.material.emissive.set(params.btnColor); spinButtonMesh.material.emissiveIntensity = params.btnClick; }
+                    if(spinArrowMesh) { spinArrowMesh.material.emissive.set(params.arrColor); spinArrowMesh.material.emissiveIntensity = params.arrClick; }
+                    isLightFlashing = true; 
+                    setTimeout(() => isLightFlashing = false, 200);
+                    triggerButtonAnimation();
+                    spinMachine();
+                }
             }
         }
 
-        // --- SISTEMA DE MONEDAS ---
+        function triggerButtonAnimation() {
+            if (!buttonAction) return;
+            isButtonAnimating = true; buttonAction.reset(); buttonAction.time = 0; buttonAction.play(); buttonAction.paused = false;
+        }
+
+        async function init() {
+            try {
+                loadingText.innerText = "Cargando...";
+                const cubemapTexture = await new Promise((resolve, reject) => textureLoader.load('cubemap.jpg', resolve, undefined, reject));
+                cubemapTexture.mapping = THREE.EquirectangularReflectionMapping;
+                const pmremGenerator = new THREE.PMREMGenerator(renderer);
+                pmremGenerator.compileEquirectangularShader();
+                scene.environment = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
+                cubemapTexture.dispose(); pmremGenerator.dispose();
+
+                await loadStructure(); await loadCoinSystem(); await loadSymbolMasters();
+                for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
+                loadingText.style.opacity = 0;
+                animate();
+            } catch (error) { loadingText.innerText = "Error (Ver consola)"; console.error(error); }
+        }
+
         function loadCoinSystem() {
             return new Promise((resolve, reject) => {
                 loader.load('moneda.glb', (gltf) => {
                     let coinGeometry, coinMaterial;
-                    gltf.scene.traverse((node) => {
-                        if (node.isMesh) {
-                            coinGeometry = node.geometry;
-                            coinMaterial = node.material;
-                        }
-                    });
-
+                    gltf.scene.traverse((node) => { if (node.isMesh) { coinGeometry = node.geometry; coinMaterial = node.material; } });
                     if (coinGeometry && coinMaterial) {
                         if (coinMaterial.map) coinMaterial.map.colorSpace = THREE.SRGBColorSpace;
-                        coinMaterial.metalness = 1.0;
-                        coinMaterial.roughness = 0.1; 
-                        coinMaterial.envMapIntensity = 2.0;
+                        // --- FIX DE MONEDAS QUEMADAS (SIN CAMBIAR TONEMAPPING) ---
+                        // Bajamos la emisión a 0 para que no sean "bombillas planas"
+                        coinMaterial.emissive = new THREE.Color(0xffaa00); 
+                        coinMaterial.emissiveIntensity = 0.0; // Antes 2.0
+                        coinMaterial.metalness = 1.0; 
+                        coinMaterial.roughness = 0.3;
 
                         coinInstancedMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, COIN_COUNT);
-                        coinInstancedMesh.castShadow = true;
-                        coinInstancedMesh.receiveShadow = true;
-                        coinInstancedMesh.frustumCulled = false; 
-                        
-                        for (let i = 0; i < COIN_COUNT; i++) {
-                            dummy.position.set(0, -500, 0); 
-                            dummy.scale.set(0, 0, 0);
-                            dummy.updateMatrix();
-                            coinInstancedMesh.setMatrixAt(i, dummy.matrix);
-                        }
-                        coinInstancedMesh.instanceMatrix.needsUpdate = true;
-                        scene.add(coinInstancedMesh);
+                        coinInstancedMesh.castShadow = true; coinInstancedMesh.receiveShadow = true; coinInstancedMesh.frustumCulled = false; 
+                        for (let i = 0; i < COIN_COUNT; i++) { dummy.position.set(0, -500, 0); dummy.scale.set(0, 0, 0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
+                        coinInstancedMesh.instanceMatrix.needsUpdate = true; scene.add(coinInstancedMesh);
                     }
                     resolve();
                 }, undefined, reject);
@@ -294,36 +340,17 @@
 
         function spawnCoins() {
             for(let i=0; i < COIN_COUNT; i++) {
-                const data = coinsData[i];
-                data.active = true;
-                data.position.set(
-                    (Math.random() - 0.5) * COIN_SPREAD * 2, 
-                    -8.0, 
-                    12.0 + (Math.random() * 4.0)
-                );
-                data.velocity.set(
-                    (Math.random() - 0.5) * 10.0, 
-                    COIN_BLAST_FORCE + (Math.random() * 10), 
-                    (Math.random() - 0.5) * 5.0
-                );
+                const data = coinsData[i]; data.active = true;
+                data.position.set((Math.random() - 0.5) * COIN_SPREAD * 2, -8.0, 12.0 + (Math.random() * 4.0));
+                data.velocity.set((Math.random() - 0.5) * 10.0, COIN_BLAST_FORCE + (Math.random() * 10), (Math.random() - 0.5) * 5.0);
                 data.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
-                data.rotSpeed.set(
-                    (Math.random() - 0.5) * 15, 
-                    (Math.random() - 0.5) * 15, 
-                    (Math.random() - 0.5) * 15
-                );
+                data.rotSpeed.set((Math.random() - 0.5) * 15, (Math.random() - 0.5) * 15, (Math.random() - 0.5) * 15);
             }
         }
 
         function resetCoins() {
             if (!coinInstancedMesh) return;
-            for(let i=0; i < COIN_COUNT; i++) {
-                coinsData[i].active = false;
-                dummy.position.set(0, -500, 0);
-                dummy.scale.set(0,0,0);
-                dummy.updateMatrix();
-                coinInstancedMesh.setMatrixAt(i, dummy.matrix);
-            }
+            for(let i=0; i < COIN_COUNT; i++) { coinsData[i].active = false; dummy.position.set(0, -500, 0); dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
             coinInstancedMesh.instanceMatrix.needsUpdate = true;
         }
 
@@ -333,133 +360,113 @@
             for(let i=0; i < COIN_COUNT; i++) {
                 const data = coinsData[i];
                 if (data.active) {
-                    data.velocity.y -= COIN_GRAVITY * delta; 
-                    data.position.addScaledVector(data.velocity, delta);
-                    data.rotation.x += data.rotSpeed.x * delta;
-                    data.rotation.y += data.rotSpeed.y * delta;
-                    data.rotation.z += data.rotSpeed.z * delta;
-                    dummy.position.copy(data.position);
-                    dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
-                    dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE);
-                    dummy.updateMatrix();
+                    data.velocity.y -= COIN_GRAVITY * delta; data.position.addScaledVector(data.velocity, delta);
+                    data.rotation.x += data.rotSpeed.x * delta; data.rotation.y += data.rotSpeed.y * delta; data.rotation.z += data.rotSpeed.z * delta;
+                    dummy.position.copy(data.position); dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z); dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE); dummy.updateMatrix();
                     coinInstancedMesh.setMatrixAt(i, dummy.matrix);
-                    if (data.position.y < -30) {
-                        data.active = false;
-                        dummy.scale.set(0,0,0);
-                        dummy.updateMatrix();
-                        coinInstancedMesh.setMatrixAt(i, dummy.matrix);
-                    } else {
-                        activeCount++;
-                    }
+                    if (data.position.y < -50) { data.active = false; dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); } else { activeCount++; }
                 }
             }
-            if (activeCount > 0 || coinInstancedMesh.count > 0) {
-                coinInstancedMesh.instanceMatrix.needsUpdate = true;
-            }
+            if (activeCount > 0 || coinInstancedMesh.count > 0) coinInstancedMesh.instanceMatrix.needsUpdate = true;
         }
 
-        // --- SETUP ---
         function setupStructure(node) {
             if (node.isMesh) {
-                node.castShadow = true;
-                node.receiveShadow = true; 
-                if (node.material && node.material.map) {
-                    node.material.map.colorSpace = THREE.SRGBColorSpace;
+                node.castShadow = true; node.receiveShadow = true; 
+                if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
+            }
+            if (node.name.toLowerCase() === 'spin') {
+                spinGroup = node;
+                let childMeshes = [];
+                node.traverse((child) => {
+                    if (child.isMesh) {
+                        childMeshes.push(child);
+                        if (child.material) {
+                            child.material = child.material.clone();
+                            child.material.emissiveMap = null; 
+                            child.material.emissive = new THREE.Color(0x000000);
+                            child.material.emissiveIntensity = 0.5;
+                            child.userData.origColor = child.material.color.clone();
+                        }
+                    }
+                });
+                if (childMeshes.length > 0) {
+                    const arrow = childMeshes.find(m => m.name.toLowerCase().includes('arrow') || m.name.toLowerCase().includes('flecha'));
+                    if (arrow) { spinArrowMesh = arrow; spinButtonMesh = childMeshes.find(m => m !== arrow); } 
+                    else { spinArrowMesh = childMeshes[0]; spinButtonMesh = childMeshes.length > 1 ? childMeshes[1] : null; }
+                    
+                    if (spinArrowMesh) spinArrowMesh.material.emissive.set(params.arrColor);
+                    if (spinButtonMesh) spinButtonMesh.material.emissive.set(params.btnColor);
                 }
             }
         }
 
         function setupSymbol(node) {
-             if (node.isMesh) {
-                node.castShadow = true;
-                node.receiveShadow = false; 
-                if (node.material && node.material.map) {
-                    node.material.map.colorSpace = THREE.SRGBColorSpace;
-                }
-            }
+             if (node.isMesh) { node.castShadow = true; node.receiveShadow = false; if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; }
         }
 
         function loadStructure() {
             return new Promise((resolve, reject) => {
                 loader.load('cilindro.glb', (gltf) => {
                     const model = gltf.scene;
-                    model.traverse(setupStructure);
-                    scene.add(model);
-                    resolve();
+                    if (gltf.animations && gltf.animations.length > 0) {
+                        buttonMixer = new THREE.AnimationMixer(model);
+                        const clip = gltf.animations[0];
+                        buttonAction = buttonMixer.clipAction(clip);
+                        buttonAction.loop = THREE.LoopOnce; buttonAction.clampWhenFinished = true; buttonAction.play(); buttonAction.paused = true; buttonAction.time = 0;
+                    }
+                    model.traverse(setupStructure); scene.add(model); resolve();
                 }, undefined, reject);
             });
         }
 
         function loadSymbolMasters() {
             const uniqueFiles = [...new Set(ARCHIVOS_GLB)];
-            const promises = uniqueFiles.map(file => {
-                return new Promise((resolve, reject) => {
-                    loader.load(file, (gltf) => {
-                        symbolMasters[file] = gltf.scene;
-                        resolve();
-                    }, undefined, reject);
-                });
-            });
+            const promises = uniqueFiles.map(file => new Promise((resolve, reject) => loader.load(file, (gltf) => { symbolMasters[file] = gltf.scene; resolve(); }, undefined, reject)));
             return Promise.all(promises);
         }
 
         function crearHilera(indicePosicion) {
             const reelGroup = new THREE.Group();
             const posX = (indicePosicion * SEPARACION_CARRETES) - ((NUM_CARRETES - 1) * SEPARACION_CARRETES / 2);
-            reelGroup.position.x = posX;
-            scene.add(reelGroup);
-            reels.push(reelGroup);
-
+            reelGroup.position.x = posX; scene.add(reelGroup); reels.push(reelGroup);
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
                 const fileName = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
                 const rawModel = symbolMasters[fileName].clone();
                 const pivot = new THREE.Group();
                 pivot.rotation.x = (i * ANGLE_STEP);
-                rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
-                rawModel.rotation.x = AJUSTE_ROTACION_X;
-                pivot.add(rawModel);
-                reelGroup.add(pivot);
-                rawModel.traverse(setupSymbol);
+                rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS); rawModel.rotation.x = AJUSTE_ROTACION_X;
+                pivot.add(rawModel); reelGroup.add(pivot); rawModel.traverse(setupSymbol);
             }
         }
 
-        // =====================================================================
-        // LÓGICA DE JUEGO (COREOGRAFÍA)
-        // =====================================================================
-        
         function spinMachine() {
-            if (machineIsSpinning) return;
-            machineIsSpinning = true;
-            
-            // RESET
-            isZoomed = false; 
-            adjustCameraTarget();
-            resetCoins();
-
-            spinButton.disabled = true;
-            resultText.classList.remove('show');
-            resultText.style.borderColor = "#ffd700";
-            resultText.style.color = "#fff";
-
+            if (machineIsSpinning || isButtonDisabled) return;
+            machineIsSpinning = true; isButtonDisabled = true; 
+            isZoomed = false; adjustCameraTarget(); resetCoins();
+            resultText.classList.remove('show'); resultText.style.borderColor = "#ffd700"; resultText.style.color = "#fff";
             reelStates.forEach((state) => { state.mode = 'SPINNING'; state.velocity = 0; });
             for (let i = 0; i < NUM_CARRETES; i++) setTimeout(() => triggerStop(i), SPIN_DURATION_MS + (i * STOP_DELAY_MS));
         }
 
-        spinButton.addEventListener('click', spinMachine);
-
         window.addEventListener('click', (e) => {
-            if (isVRMode && e.target !== vrButton) spinMachine();
+            if (isVRMode && e.target !== vrButton && !e.target.closest('.panel')) {
+                if(!isButtonDisabled) { triggerButtonAnimation(); spinMachine(); }
+            }
         });
 
         function triggerStop(reelIndex) {
-            const state = reelStates[reelIndex];
-            state.mode = 'STOPPING';
-            // Hack: Siempre gana
+            const state = reelStates[reelIndex]; state.mode = 'STOPPING';
             const currentRotation = reels[reelIndex].rotation.x;
             const fullCircle = Math.PI * 2;
             const nextSafeRound = Math.ceil(currentRotation / fullCircle);
             const targetRounds = nextSafeRound + 2 + reelIndex; 
-            state.targetAngle = targetRounds * fullCircle;
+            
+            // ALEATORIEDAD REAL
+            const randomIndex = Math.floor(Math.random() * NUM_ITEMS_POR_RUEDA);
+            const angleOffset = randomIndex * ANGLE_STEP;
+            
+            state.targetAngle = (targetRounds * fullCircle) + angleOffset;
         }
 
         function checkResults() {
@@ -471,43 +478,30 @@
                 const index = (NUM_ITEMS_POR_RUEDA - (steps % NUM_ITEMS_POR_RUEDA)) % NUM_ITEMS_POR_RUEDA;
                 resultados.push(NOMBRES_SIMBOLOS[index]);
             });
-            resultText.innerText = resultados.join("  -  ");
+            
+            resultText.innerText = resultados.join(" - "); 
             resultText.classList.add('show');
             
-            // --- SECUENCIA DE VICTORIA ---
+            // VERIFICAR PREMIO (3 IGUALES)
             if (resultados[0] === resultados[1] && resultados[1] === resultados[2]) {
-                resultText.style.borderColor = "#00ff00";
-                resultText.style.color = "#00ff00";
-                resultText.innerText += " ¡PREMIO!";
-                
-                // PASO 1: ACERCAR CÁMARA (Zoom In)
-                isZoomed = true;
-                adjustCameraTarget();
-                
-                // PASO 2: ESPERAR 1.5s (Viendo los rodillos)
-                setTimeout(() => {
-                    // PASO 3: ALEJAR CÁMARA (Zoom Out)
-                    isZoomed = false;
-                    adjustCameraTarget();
-
-                    // PASO 4: ESPERAR A QUE SE ALEJE UN POCO (0.8s) Y LANZAR MONEDAS
-                    setTimeout(() => {
-                        spawnCoins();
-                    }, 800);
-
+                resultText.style.borderColor = "#00ff00"; resultText.style.color = "#00ff00"; resultText.innerText += " ¡PREMIO!";
+                isZoomed = true; adjustCameraTarget();
+                setTimeout(() => { 
+                    isZoomed = false; adjustCameraTarget(); 
+                    setTimeout(() => { 
+                        spawnCoins(); 
+                        setTimeout(() => { isButtonDisabled = false; }, 3000); 
+                    }, 800); 
                 }, 1500);
+            } else { 
+                isButtonDisabled = false; 
             }
         }
 
         vrButton.addEventListener('click', () => {
             isVRMode = !isVRMode;
-            if (isVRMode) {
-                uiElements.forEach(el => el.classList.add('hidden-in-vr'));
-                if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
-            } else {
-                uiElements.forEach(el => el.classList.remove('hidden-in-vr'));
-                if (document.exitFullscreen) document.exitFullscreen();
-            }
+            if (isVRMode) { uiElements.forEach(el => el.classList.add('hidden-in-vr')); if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); } 
+            else { uiElements.forEach(el => el.classList.remove('hidden-in-vr')); if (document.exitFullscreen) document.exitFullscreen(); }
             adjustCameraTarget();
         });
 
@@ -515,90 +509,98 @@
             requestAnimationFrame(animate);
             const delta = clock.getDelta(); 
             updateCoins(delta);
-
-            // Interpolación de cámara
-            if (!isVRMode) { 
-                 camera.position.z += (targetZ - camera.position.z) * 0.05;
-            } else {
-                 camera.position.z = Z_VR; 
+            
+            let isHovering = false;
+            if (spinGroup && !isVRMode && !isButtonDisabled) {
+                raycaster.setFromCamera(pointer, camera);
+                const intersects = raycaster.intersectObject(spinGroup, true);
+                if (intersects.length > 0) isHovering = true;
             }
 
-            let allReelsIdle = true;
+            if (isHovering && !isButtonDisabled) document.body.style.cursor = 'pointer'; else document.body.style.cursor = 'default';
 
+            // --- LÓGICA DE ESTADO VISUAL ---
+            let targetIntBtn, targetIntArr;
+            
+            if (isButtonDisabled) {
+                targetIntBtn = 0.0; targetIntArr = 0.0;
+                if (spinButtonMesh) spinButtonMesh.material.color.setHex(0x333333);
+                if (spinArrowMesh) spinArrowMesh.material.color.setHex(0x333333);
+            } else {
+                if (spinButtonMesh && spinButtonMesh.userData.origColor) spinButtonMesh.material.color.copy(spinButtonMesh.userData.origColor);
+                if (spinArrowMesh && spinArrowMesh.userData.origColor) spinArrowMesh.material.color.copy(spinArrowMesh.userData.origColor);
+
+                if (isHovering) { targetIntBtn = params.btnHover; targetIntArr = params.arrHover; } 
+                else { targetIntBtn = params.btnIdle; targetIntArr = params.arrIdle; }
+            }
+
+            if (spinButtonMesh) {
+                spinButtonMesh.material.emissiveIntensity += (targetIntBtn - spinButtonMesh.material.emissiveIntensity) * 0.15;
+                spinButtonMesh.material.emissive.lerp(new THREE.Color(params.btnColor), 0.2);
+            }
+            if (spinArrowMesh) {
+                spinArrowMesh.material.emissiveIntensity += (targetIntArr - spinArrowMesh.material.emissiveIntensity) * 0.15;
+                spinArrowMesh.material.emissive.lerp(new THREE.Color(params.arrColor), 0.2);
+            }
+
+            // --- GESTIÓN LUZ PUNTUAL ---
+            if (isLightFlashing) {
+                pointLight.intensity = params.lClkInt; pointLight.distance = params.lClkDist; pointLight.color.set(params.lClkColor);
+            } else if (isButtonDisabled) {
+                pointLight.intensity = 0;
+            } else if (isHovering) {
+                pointLight.intensity = params.lHovInt; pointLight.distance = params.lHovDist; pointLight.color.set(params.lHovColor);
+            } else {
+                pointLight.intensity = 0; 
+            }
+
+            if (buttonMixer && buttonAction) {
+                if (isButtonAnimating) {
+                    buttonMixer.update(delta);
+                    if (buttonAction.time >= TIME_ClickEnd) { buttonAction.paused = true; buttonAction.time = TIME_ClickEnd; isButtonAnimating = false; }
+                } else {
+                    if (isHovering && !isButtonDisabled) { buttonAction.paused = true; buttonAction.time = TIME_Hover; buttonMixer.update(0); } 
+                    else { buttonAction.paused = true; buttonAction.time = 0; buttonMixer.update(0); }
+                }
+            }
+
+            if (!isVRMode) camera.position.z += (targetZ - camera.position.z) * 0.05; else camera.position.z = Z_VR; 
+
+            let allReelsIdle = true;
             reels.forEach((reel, i) => {
                 if (!reel) return;
                 const state = reelStates[i];
-
                 if (state.mode === 'SPINNING') {
-                    allReelsIdle = false;
-                    if (state.velocity < MAX_SPEED) state.velocity += 0.02; 
-                    reel.rotation.x += state.velocity;
+                    allReelsIdle = false; if (state.velocity < MAX_SPEED) state.velocity += 0.02; reel.rotation.x += state.velocity;
                 } else if (state.mode === 'STOPPING') {
                     allReelsIdle = false;
                     const displacement = state.targetAngle - reel.rotation.x;
-                    state.velocity += displacement * SPRING_TENSION;
-                    state.velocity *= SPRING_DAMPING;
-                    reel.rotation.x += state.velocity;
-                    if (Math.abs(displacement) < 0.005 && Math.abs(state.velocity) < 0.005) {
-                        reel.rotation.x = state.targetAngle; state.mode = 'IDLE'; state.velocity = 0;
-                    }
+                    state.velocity += displacement * SPRING_TENSION; state.velocity *= SPRING_DAMPING; reel.rotation.x += state.velocity;
+                    if (Math.abs(displacement) < 0.005 && Math.abs(state.velocity) < 0.005) { reel.rotation.x = state.targetAngle; state.mode = 'IDLE'; state.velocity = 0; }
                 }
             });
 
-            if (allReelsIdle && machineIsSpinning) {
-                machineIsSpinning = false;
-                spinButton.disabled = false;
-                checkResults();
-            }
+            if (allReelsIdle && machineIsSpinning) { machineIsSpinning = false; checkResults(); }
 
-            if (isVRMode) {
-                effectVR.render(scene, camera);
-            } else {
-                composer.render();
-            }
+            if (isVRMode) effectVR.render(scene, camera); else composer.render();
         }
 
         function adjustCameraTarget() {
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            const aspect = width / height;
-
-            let idealZ = Z_NORMAL;
-            if (isVRMode) {
-                idealZ = Z_VR; 
-            } else if (isZoomed) {
-                idealZ = Z_ZOOM;
-            }
-
-            if (aspect < 1.0 && !isVRMode) {
-                targetZ = idealZ / (aspect * 0.85);
-            } else {
-                targetZ = idealZ;
-            }
+            const width = window.innerWidth; const height = window.innerHeight; const aspect = width / height;
+            let idealZ = Z_NORMAL; if (isVRMode) idealZ = Z_VR; else if (isZoomed) idealZ = Z_ZOOM;
+            if (aspect < 1.0 && !isVRMode) targetZ = idealZ / (aspect * 0.85); else targetZ = idealZ;
         }
 
         function onWindowResize() {
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            
-            renderer.setSize(width, height);
-            effectVR.setSize(width, height);
-            composer.setSize(width, height);
-
+            const width = window.innerWidth; const height = window.innerHeight;
+            renderer.setSize(width, height); effectVR.setSize(width, height); composer.setSize(width, height);
             const pixelRatio = renderer.getPixelRatio();
-            fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio);
-            fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
-
-            const aspect = width / height;
-            camera.aspect = aspect;
-            camera.updateProjectionMatrix();
-            
-            adjustCameraTarget();
+            fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio); fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
+            const aspect = width / height; camera.aspect = aspect; camera.updateProjectionMatrix(); adjustCameraTarget();
         }
 
         window.addEventListener('resize', onWindowResize);
         window.addEventListener('orientationchange', () => setTimeout(onWindowResize, 100));
-        
         onWindowResize();
         init();
     </script>

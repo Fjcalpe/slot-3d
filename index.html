@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Standard Render</title>
+    <title>Slot Pro: Mobile Optimized</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -59,6 +59,31 @@
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #222; }
         ::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+
+        /* --- NUEVOS ESTILOS PARA PANTALLA COMPLETA --- */
+        #exit-fs-btn {
+            position: absolute; bottom: 20px; right: 20px; z-index: 150;
+            background: rgba(200, 0, 0, 0.8); color: #fff; border: 1px solid #fff;
+            padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;
+            display: none; /* Oculto por defecto */
+            text-transform: uppercase; font-size: 12px; letter-spacing: 1px;
+        }
+        /* CSS Magic: Mostrar el botón EXIT SOLO cuando el navegador está en modo pantalla completa */
+        :fullscreen #exit-fs-btn, :-webkit-full-screen #exit-fs-btn { display: block; }
+
+        #landscape-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); z-index: 200;
+            display: none; /* Oculto por defecto */
+            align-items: center; justify-content: center; flex-direction: column;
+            color: #ffd700; text-align: center; padding: 20px; box-sizing: border-box;
+        }
+        #landscape-overlay p { font-size: 1.2rem; margin-bottom: 25px; text-transform: uppercase; }
+        #enter-fs-btn {
+             background: #ffd700; color: #000; border: none; padding: 15px 30px;
+             font-size: 1.1rem; font-weight: bold; border-radius: 8px; cursor: pointer;
+             text-transform: uppercase; box-shadow: 0 0 15px #ffd700;
+        }
     </style>
 </head>
 <body>
@@ -70,6 +95,13 @@
     </div>
 
     <button id="vr-btn" title="Modo VR">👓</button>
+
+    <button id="exit-fs-btn">EXIT FULLSCREEN</button>
+
+    <div id="landscape-overlay">
+        <p>¡Modo Horizontal Detectado!</p>
+        <button id="enter-fs-btn">Jugar en Pantalla Completa</button>
+    </div>
 
     <script type="importmap">
         {
@@ -172,6 +204,14 @@
         const vrButton = document.getElementById('vr-btn');
         const uiElements = document.querySelectorAll('.ui-element');
 
+        // --- NUEVAS VARIABLES PARA FULLSCREEN ---
+        const exitFsBtn = document.getElementById('exit-fs-btn');
+        const landscapeOverlay = document.getElementById('landscape-overlay');
+        const enterFsBtn = document.getElementById('enter-fs-btn');
+        // Regex simple para detectar dispositivos móviles
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+
         const reelStates = Array(NUM_CARRETES).fill(null).map(() => ({ mode: 'IDLE', velocity: 0, targetAngle: 0 }));
         const symbolMasters = {};
         let coinInstancedMesh;
@@ -191,7 +231,6 @@
         renderer.shadowMap.enabled = true; 
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         
-        // --- RESTAURADO A NO TONE MAPPING (Como pediste) ---
         renderer.toneMapping = THREE.NoToneMapping; 
         
         document.body.appendChild(renderer.domElement);
@@ -277,6 +316,9 @@
             raycaster.setFromCamera(pointer, camera);
             
             if (event.target.closest('.panel')) return; 
+            // Evitar click si se está pulsando los botones de UI nuevos
+            if (event.target === exitFsBtn || event.target === enterFsBtn) return;
+
             if (isButtonDisabled) return;
 
             if (spinGroup) {
@@ -310,6 +352,10 @@
                 await loadStructure(); await loadCoinSystem(); await loadSymbolMasters();
                 for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
                 loadingText.style.opacity = 0;
+                
+                // Comprobación inicial de orientación
+                checkOrientation();
+                
                 animate();
             } catch (error) { loadingText.innerText = "Error (Ver consola)"; console.error(error); }
         }
@@ -321,10 +367,8 @@
                     gltf.scene.traverse((node) => { if (node.isMesh) { coinGeometry = node.geometry; coinMaterial = node.material; } });
                     if (coinGeometry && coinMaterial) {
                         if (coinMaterial.map) coinMaterial.map.colorSpace = THREE.SRGBColorSpace;
-                        // --- FIX DE MONEDAS QUEMADAS (SIN CAMBIAR TONEMAPPING) ---
-                        // Bajamos la emisión a 0 para que no sean "bombillas planas"
                         coinMaterial.emissive = new THREE.Color(0xffaa00); 
-                        coinMaterial.emissiveIntensity = 0.0; // Antes 2.0
+                        coinMaterial.emissiveIntensity = 0.0; 
                         coinMaterial.metalness = 1.0; 
                         coinMaterial.roughness = 0.3;
 
@@ -450,6 +494,9 @@
         }
 
         window.addEventListener('click', (e) => {
+            // Evitar que el click en los nuevos botones active la máquina
+            if (e.target === exitFsBtn || e.target === enterFsBtn) return;
+
             if (isVRMode && e.target !== vrButton && !e.target.closest('.panel')) {
                 if(!isButtonDisabled) { triggerButtonAnimation(); spinMachine(); }
             }
@@ -585,10 +632,52 @@
             if (isVRMode) effectVR.render(scene, camera); else composer.render();
         }
 
+        // =====================================================================
+        // AJUSTE DE CÁMARA (SOLUCIÓN PARA MÓVIL VERTICAL)
+        // =====================================================================
         function adjustCameraTarget() {
             const width = window.innerWidth; const height = window.innerHeight; const aspect = width / height;
             let idealZ = Z_NORMAL; if (isVRMode) idealZ = Z_VR; else if (isZoomed) idealZ = Z_ZOOM;
-            if (aspect < 1.0 && !isVRMode) targetZ = idealZ / (aspect * 0.85); else targetZ = idealZ;
+            
+            // CAMBIO CLAVE: Si el aspecto es menor a 1 (vertical), dividimos por un número mayor (1.35 en vez de 0.85)
+            // Esto hace que el resultado 'targetZ' sea más pequeño, acercando la cámara.
+            if (aspect < 1.0 && !isVRMode) targetZ = idealZ / (aspect * 1.35); else targetZ = idealZ;
+        }
+
+        // =====================================================================
+        // GESTIÓN DE PANTALLA COMPLETA Y ORIENTACIÓN
+        // =====================================================================
+        
+        // Botón EXIT: Salir de pantalla completa
+        exitFsBtn.addEventListener('click', () => {
+            if (document.exitFullscreen) document.exitFullscreen();
+            else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); // Safari
+        });
+
+        // Botón ENTRAR: Solicitar pantalla completa (requiere interacción del usuario)
+        enterFsBtn.addEventListener('click', () => {
+             const docEl = document.documentElement;
+             if (docEl.requestFullscreen) docEl.requestFullscreen();
+             else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen(); // Safari
+             // Ocultamos el overlay inmediatamente tras el click
+             landscapeOverlay.style.display = 'none';
+        });
+
+        // Función para comprobar si debemos mostrar el overlay
+        function checkOrientation() {
+            // Solo ejecutar en dispositivos móviles
+            if (!isMobile) return;
+
+             const isLandscape = window.innerWidth > window.innerHeight;
+             // Comprobar si YA estamos en pantalla completa usando API estándar o Webkit
+             const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+
+             // Si es horizontal Y NO estamos ya en pantalla completa, mostrar el botón
+            if (isLandscape && !isFullscreen) {
+                landscapeOverlay.style.display = 'flex';
+            } else {
+                landscapeOverlay.style.display = 'none';
+            }
         }
 
         function onWindowResize() {
@@ -599,8 +688,20 @@
             const aspect = width / height; camera.aspect = aspect; camera.updateProjectionMatrix(); adjustCameraTarget();
         }
 
-        window.addEventListener('resize', onWindowResize);
-        window.addEventListener('orientationchange', () => setTimeout(onWindowResize, 100));
+        window.addEventListener('resize', () => {
+            onWindowResize();
+            checkOrientation(); // Comprobar orientación al redimensionar
+        });
+        
+        // Listener específico para cambios de pantalla completa (para actualizar el botón EXIT y el overlay)
+        document.addEventListener('fullscreenchange', checkOrientation);
+        document.addEventListener('webkitfullscreenchange', checkOrientation);
+        
+        window.addEventListener('orientationchange', () => setTimeout(() => {
+            onWindowResize();
+            checkOrientation();
+        }, 100));
+        
         onWindowResize();
         init();
     </script>

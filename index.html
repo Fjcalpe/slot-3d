@@ -3,24 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Slot Pro: Mobile Perfect</title>
+    <title>Slot Pro: Full Content</title>
     <style>
         body { 
             margin: 0; padding: 0; overflow: hidden; 
             background-color: #000; 
             font-family: 'Segoe UI', sans-serif; touch-action: none; 
+            -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
         }
         
-        /* CSS ESTRICTO PARA EL CANVAS: Evita desplazamientos fantasma */
-        canvas {
-            display: block;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            outline: none;
-        }
+        canvas { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 100%; outline: none; }
         
         #loading {
             position: absolute; top: 50%; width: 100%; text-align: center; left: 0;
@@ -38,22 +30,36 @@
         }
         #result-text.show { opacity: 1; transform: scale(1); }
 
-        #vr-btn {
-            position: absolute; bottom: 20px; left: 20px; z-index: 100;
+        .icon-btn {
+            position: absolute; z-index: 100;
             background: rgba(0,0,0,0.5); border: 2px solid #fff;
             color: #fff; border-radius: 50%; width: 50px; height: 50px;
             font-size: 24px; cursor: pointer; display: flex;
-            align-items: center; justify-content: center; transition: transform 0.2s;
+            align-items: center; justify-content: center; transition: transform 0.1s;
         }
-        #vr-btn:active { transform: scale(0.9); }
-        
-        #exit-fs-btn {
-            position: absolute; top: 20px; right: 20px; z-index: 150;
-            background: rgba(200, 0, 0, 0.8); color: #fff; border: 1px solid #fff;
-            padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;
-            display: none; text-transform: uppercase; font-size: 10px;
+        .icon-btn:active { transform: scale(0.9); background: rgba(255,255,255,0.2); }
+
+        #vr-btn { bottom: 20px; left: 20px; }
+        #fs-manual-btn { top: 20px; right: 20px; font-size: 20px; }
+
+        #landscape-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); z-index: 999;
+            display: none; 
+            align-items: center; justify-content: center; flex-direction: column;
+            color: #ffd700; text-align: center; padding: 20px; box-sizing: border-box;
         }
-        :fullscreen #exit-fs-btn, :-webkit-full-screen #exit-fs-btn { display: block; }
+        #landscape-overlay p { 
+            font-size: 1.2rem; margin-bottom: 30px; text-transform: uppercase; 
+            max-width: 80%; line-height: 1.5; color: #fff;
+        }
+        #enter-fs-btn {
+              background: #ffd700; color: #000; border: none; padding: 20px 40px;
+              font-size: 1.2rem; font-weight: bold; border-radius: 50px; cursor: pointer;
+              text-transform: uppercase; box-shadow: 0 0 20px #ffd700;
+              transition: transform 0.2s;
+        }
+        #enter-fs-btn:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
@@ -61,8 +67,13 @@
     <div id="loading">Cargando Recursos...</div>
     <div id="result-text">LISTO</div>
 
-    <button id="vr-btn" title="Modo VR">👓</button>
-    <button id="exit-fs-btn">SALIR PANTALLA COMPLETA</button>
+    <button id="vr-btn" class="icon-btn" title="Modo VR">👓</button>
+    <button id="fs-manual-btn" class="icon-btn" title="Pantalla Completa">⛶</button>
+
+    <div id="landscape-overlay">
+        <p>Para jugar en horizontal necesitamos ocultar la barra del navegador.</p>
+        <button id="enter-fs-btn">MODO CINE</button>
+    </div>
 
     <script type="importmap">
         {
@@ -85,16 +96,13 @@
         const resultText = document.getElementById('result-text');
         
         // --- CONSTANTES DE ENCUADRE ---
-        const MACHINE_WIDTH_FACTOR = 17.5; // Punto dulce de tamaño
+        const MACHINE_WIDTH_FACTOR = 17.5; 
         
-        // --- AJUSTES DE POSICIÓN ---
         const CAM_LAND_DIST = 25.0;  
         const CAM_LAND_Y = -2.0;
         const CAM_LAND_X = 0.0;     
         
         const CAM_PORT_Y = -4.5;
-        // CORRECCIÓN MÓVIL: Movemos la cámara un poco a la derecha (1.2)
-        // para compensar el desplazamiento que ves en el móvil.
         const CAM_PORT_X = 1.2;      
         
         const Z_VR = 42; 
@@ -106,8 +114,9 @@
         const RADIO_ORBITA_SIMBOLOS = 6.0;
         const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
         
-        const ARCHIVOS_GLB = ['sirena.glb']; 
-        const NOMBRES_SIMBOLOS = ['Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena'];
+        // --- RESTAURADOS LOS MODELOS ORIGINALES ---
+        const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb'];
+        const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
         
         const params = { btnColor: "#ffffff", btnClick: 20.8, arrColor: "#fff68f", arrClick: 14.8 };
 
@@ -124,7 +133,6 @@
         const cameraPortrait = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 150);
         let activeCamera = cameraLandscape; 
 
-        // Variables de objetivo
         let targetX = 0;
         let targetY = CAM_LAND_Y;
         let targetZ = CAM_LAND_DIST;
@@ -161,6 +169,12 @@
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
 
+        // DOM Elements
+        const overlay = document.getElementById('landscape-overlay');
+        const enterFsBtn = document.getElementById('enter-fs-btn');
+        const manualFsBtn = document.getElementById('fs-manual-btn');
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
         // =====================================================================
         // 3. INICIALIZACIÓN
         // =====================================================================
@@ -180,7 +194,13 @@
                 createLights();
 
                 loadingText.innerText = "Cargando Modelos...";
-                await safeLoadSymbol('sirena.glb');
+                
+                // --- LÓGICA PARA CARGAR TODOS LOS MODELOS ÚNICOS ---
+                const uniqueFiles = [...new Set(ARCHIVOS_GLB)];
+                for (const file of uniqueFiles) {
+                    await safeLoadSymbol(file);
+                }
+
                 await safeLoadStructure('cilindro.glb');
                 await safeLoadCoins('moneda.glb');
 
@@ -195,6 +215,11 @@
                 window.addEventListener('pointerdown', onPointerDown);
                 
                 document.getElementById('vr-btn').addEventListener('click', toggleVR);
+                enterFsBtn.addEventListener('click', requestFullscreen);
+                manualFsBtn.addEventListener('click', toggleFullscreen);
+                
+                document.addEventListener('fullscreenchange', checkOrientation);
+                document.addEventListener('webkitfullscreenchange', checkOrientation);
 
                 onWindowResize(); 
                 animate();
@@ -205,14 +230,31 @@
             }
         }
 
+        function requestFullscreen() {
+            const docEl = document.documentElement;
+            const requestMethod = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
+            if (requestMethod) {
+                requestMethod.call(docEl).then(() => { overlay.style.display = 'none'; checkOrientation(); }).catch(e => { overlay.style.display = 'none'; });
+            }
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                requestFullscreen();
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            }
+        }
+
         async function safeLoadSymbol(file) {
             return new Promise(resolve => {
                 loader.load(file, (gltf) => {
                     symbolMasters[file] = gltf.scene;
                     resolve();
                 }, undefined, () => {
-                    console.warn(file + " no encontrado. Usando Cubo.");
-                    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color:0xff0000}));
+                    // Fallback visual si falta el archivo
+                    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color: Math.random() * 0xffffff}));
                     const g = new THREE.Group(); g.add(mesh);
                     symbolMasters[file] = g;
                     resolve();
@@ -231,10 +273,7 @@
                     }
                     scene.add(gltf.scene);
                     resolve();
-                }, undefined, () => {
-                    console.warn("Estructura no encontrada.");
-                    resolve();
-                });
+                }, undefined, () => resolve());
             });
         }
 
@@ -292,7 +331,6 @@
 
         function setupStructure(node) {
             structureGroup = node;
-
             if (node.name.toLowerCase() === 'spin') {
                 spinGroup = node;
                 node.traverse((child) => {
@@ -321,7 +359,10 @@
             reels.push(reelGroup);
             
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
-                const model = symbolMasters['sirena.glb'].clone();
+                // --- SELECCIÓN DEL MODELO SEGÚN ARRAY ---
+                const glbName = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
+                const model = symbolMasters[glbName].clone();
+                
                 const pivot = new THREE.Group();
                 pivot.rotation.x = (i * ANGLE_STEP);
                 model.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
@@ -356,24 +397,32 @@
             cameraLandscape.aspect = aspect; cameraLandscape.updateProjectionMatrix();
             cameraPortrait.aspect = aspect; cameraPortrait.updateProjectionMatrix();
 
+            checkOrientation();
             adjustCameraTarget();
+        }
+
+        function checkOrientation() {
+            if (!isMobile) return;
+            const isLandscape = window.innerWidth > window.innerHeight;
+            const isFS = document.fullscreenElement || document.webkitFullscreenElement;
+            if (isLandscape && !isFS) overlay.style.display = 'flex';
+            else overlay.style.display = 'none';
         }
 
         function adjustCameraTarget() {
             const aspect = window.innerWidth / window.innerHeight;
             
-            if (aspect >= 1.0) { // Horizontal
+            if (aspect >= 1.0) { 
                 activeCamera = cameraLandscape;
                 targetZ = CAM_LAND_DIST; 
                 targetY = CAM_LAND_Y;
-                targetX = CAM_LAND_X;
-            } else { // Vertical
+            } else { 
                 activeCamera = cameraPortrait;
                 targetZ = MACHINE_WIDTH_FACTOR / aspect; 
                 targetY = CAM_PORT_Y;
-                // Aplicamos la corrección X para móvil
-                targetX = CAM_PORT_X; 
             }
+            
+            targetX = (activeCamera === cameraPortrait) ? CAM_PORT_X : CAM_LAND_X; 
 
             if (isVRMode) { targetZ = Z_VR; targetY = 0; targetX = 0; }
             else if (isZoomed) { targetZ = Z_ZOOM; targetY = 0; targetX = 0; }
@@ -432,10 +481,6 @@
              }
         }
 
-        // =====================================================================
-        // 6. INPUT Y ANIMACIÓN
-        // =====================================================================
-        
         function onPointerDown(e) {
             if (e.target.tagName === 'BUTTON') return;
             if (isButtonDisabled) return;
@@ -456,9 +501,7 @@
                 if (intersects.length > 0) hit = true;
             }
 
-            if (hit) {
-                spinMachine();
-            }
+            if (hit) spinMachine();
         }
 
         function spawnCoins() {
@@ -485,7 +528,6 @@
                     data.velocity.y -= COIN_GRAVITY * delta; 
                     data.position.addScaledVector(data.velocity, delta);
                     data.rotation.x += 5 * delta; 
-                    
                     dummy.position.copy(data.position); 
                     dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z); 
                     dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE); 

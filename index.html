@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Test Sin Sombras</title>
+    <title>Slot Pro: Test Sombras 512</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -162,7 +162,7 @@
         
         // --- ARCHIVOS GLB ORIGINALES (COMENTADOS) ---
         // const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
-        // const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
+        // const NOMBRES_SIMBOLOS_GLB = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
         
         // --- PARÁMETROS PARA TEST DE GEOMETRÍA ---
         const GEOMETRIAS = ['Box', 'Tetrahedron', 'Octahedron', 'Icosahedron', 'Dodecahedron', 'Torus'];
@@ -187,7 +187,7 @@
         
         // --- OPTIMIZACIÓN BASADA EN DISPOSITIVO ---
         const COIN_COUNT = isMobile ? 50 : 150; 
-        const SHADOW_MAP_SIZE = isMobile ? 1024 : 2048; 
+        const SHADOW_MAP_SIZE = isMobile ? 512 : 2048; // CAMBIO: 512 para móvil
         const RENDERER_ANTIALIAS = !isMobile; 
         const ENABLE_BLOOM = !isMobile; 
 
@@ -287,12 +287,13 @@
         const sunLight = new THREE.DirectionalLight(params.sunColor, params.sunInt); 
         sunLight.position.set(-10, 30, 20); 
         
-        // --- CAMBIO: DESACTIVAR SOMBRAS DE LA LUZ SOLAR ---
-        sunLight.castShadow = false;
+        // Habilitar sombras CONDICIONALMENTE
+        sunLight.castShadow = !isMobile;
         
-        // Configuraciones de sombra ya no son estrictamente necesarias, pero las mantenemos comentadas o simplificadas:
-        // const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-        // sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); sunLight.shadow.bias = -0.0005; sunLight.shadow.radius = 2; 
+        const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); // CAMBIO A SHADOW_MAP_SIZE
+        sunLight.shadow.bias = -0.0005; 
+        sunLight.shadow.radius = 2; 
         
         scene.add(sunLight);
 
@@ -304,11 +305,11 @@
         fillLight.position.set(-8.10, -4.57, -7.28); 
         fillPivot.add(fillLight); 
         
-        // --- OPTIMIZACIÓN ANTERIOR: DESACTIVAR LUZ DE RELLENO EN MÓVIL ---
+        // LUZ DE RELLENO: DESACTIVADA EN MÓVIL
         if (isMobile) {
             fillLight.intensity = 0;
         }
-        fillLight.castShadow = false; // Desactivamos las sombras de la luz de relleno también para ahorrar rendimiento
+        fillLight.castShadow = false; 
         
 
         pointLight = new THREE.PointLight(0xffaa00, 0, 100);
@@ -397,8 +398,9 @@
                         coinMaterial.roughness = 0.3;
 
                         coinInstancedMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, COIN_COUNT);
-                        coinInstancedMesh.castShadow = true; 
-                        coinInstancedMesh.receiveShadow = true; 
+                        // Habilitamos cast/receive shadow para las monedas SOLO si sunLight.castShadow es true (Escritorio)
+                        coinInstancedMesh.castShadow = sunLight.castShadow; 
+                        coinInstancedMesh.receiveShadow = sunLight.castShadow; 
                         coinInstancedMesh.frustumCulled = false; 
                         for (let i = 0; i < COIN_COUNT; i++) { dummy.position.set(0, -500, 0); dummy.scale.set(0, 0, 0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
                         coinInstancedMesh.instanceMatrix.needsUpdate = true; scene.add(coinInstancedMesh);
@@ -430,9 +432,9 @@
             }
             
             const mesh = new THREE.Mesh(geometry, material);
-            // IMPORTANTE: Al desactivar las sombras del sol, podemos desactivar estas líneas
-            mesh.castShadow = false;
-            mesh.receiveShadow = false;
+            // HABILITAR CAST SHADOW SÓLO si sunLight.castShadow es TRUE (Escritorio)
+            mesh.castShadow = sunLight.castShadow;
+            mesh.receiveShadow = false; 
             return mesh;
         }
 
@@ -485,9 +487,9 @@
 
         function setupStructure(node) {
             if (node.isMesh) {
-                // Desactivar castShadow para evitar cálculos innecesarios si la luz solar no proyecta
-                node.castShadow = false; 
-                node.receiveShadow = true; 
+                // El cilindro recibe sombras si sunLight.castShadow es true (Escritorio)
+                node.castShadow = sunLight.castShadow; 
+                node.receiveShadow = sunLight.castShadow; 
                 if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
             }
             if (node.name.toLowerCase() === 'spin') {
@@ -517,8 +519,8 @@
         }
 
         function setupSymbol(node) {
-             // Desactivamos castShadow aquí también para optimización
-             if (node.isMesh) { node.castShadow = false; node.receiveShadow = false; if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; }
+             // El símbolo proyectará sombra si sunLight.castShadow es TRUE (Escritorio)
+             if (node.isMesh) { node.castShadow = sunLight.castShadow; node.receiveShadow = false; if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; }
         }
 
         function loadStructure() {

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Optimized 512</title>
+    <title>Slot Pro: Mobile Adjusted</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         
@@ -142,12 +142,11 @@
             btnColor: "#ffffff", btnIdle: 0.0, btnHover: 0.7, btnClick: 20.8,
             arrColor: "#fff68f", arrIdle: 0.2, arrHover: 0.6, arrClick: 14.8,
             
-            // --- LUCES ---
+            // --- LUCES CLÁSICAS ---
             lHovColor: "#ffaa00", lHovInt: 200, lHovDist: 22,
             lClkColor: "#ffe6aa", lClkInt: 576, lClkDist: 134,
             sunColor: "#fffee0", sunInt: 3.0,
             ambColor: "#ffffff", ambInt: 0.6,
-            // Luz de relleno eliminada de params
         };
 
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
@@ -160,22 +159,25 @@
         const RADIO_ORBITA_SIMBOLOS = 6.0; 
         const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
         
-        // --- CONFIGURACIÓN DE TIEMPO Y FÍSICA (TURBO) ---
+        // --- CONFIGURACIÓN DE TIEMPO (TURBO) ---
         const MAX_SPEED = 0.50; 
         const SPIN_DURATION_MS = 500;  
         const STOP_DELAY_MS = 150;     
         const SPRING_TENSION = 0.25;   
         const SPRING_DAMPING = 0.80;   
         
+        // --- CÁMARA ---
         let zNormal = 22; 
+        let targetZ = zNormal; 
+        let targetY = 0; // Nueva variable para mover la cámara verticalmente
+        
         const Z_ZOOM = 14; 
         const Z_VR = 42; 
         
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
         const COIN_COUNT = 150; 
-        // --- OPTIMIZACIÓN DE SOMBRAS ---
-        const SHADOW_MAP_SIZE = 512; // Bajado de 2048 a 512 para rendimiento
+        const SHADOW_MAP_SIZE = 512; 
         
         const RENDERER_ANTIALIAS = false; 
         const ENABLE_BLOOM = true; 
@@ -199,7 +201,6 @@
         let machineIsSpinning = false;
         let isButtonDisabled = false;
         let isZoomed = false; 
-        let targetZ = zNormal; 
         
         const ANIM_FPS = 30;
         const TIME_Hover = 10 / ANIM_FPS; 
@@ -266,29 +267,33 @@
         let isVRMode = false;
 
         // =====================================================================
-        // OPTIMIZACIÓN DE LUCES
+        // LUCES
         // =====================================================================
 
         function createLights() {
-            // 1. AMBIENTAL
+            // 1. Ambiental
             const ambientLight = new THREE.AmbientLight(params.ambColor, params.ambInt); 
             scene.add(ambientLight);
 
-            // 2. SOL
+            // 2. Sol (Shadows 512)
             const sunLight = new THREE.DirectionalLight(params.sunColor, params.sunInt); 
             sunLight.position.set(-10, 30, 20); 
             sunLight.castShadow = true;
             const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-            // OPTIMIZACIÓN: Mapa de sombras a 512
             sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); 
             sunLight.shadow.bias = -0.0005; 
             sunLight.shadow.radius = 2; 
             scene.add(sunLight);
 
-            // 3. RELLENO ELIMINADO (OPTIMIZACIÓN)
-            // Se ha quitado fillPivot y fillLight
+            // 3. Relleno con Pivot (Código antiguo)
+            const fillPivot = new THREE.Object3D();
+            fillPivot.rotation.set(-3.06, -1.36, -2.31); 
+            scene.add(fillPivot);
+            const fillLight = new THREE.DirectionalLight("#fffee0", 2.0); 
+            fillLight.position.set(-8.10, -4.57, -7.28); 
+            fillPivot.add(fillLight); 
 
-            // 4. PUNTO (Flash)
+            // 4. Flash del botón (Posición Y = -5)
             pointLight = new THREE.PointLight(0xffaa00, 0, 100);
             pointLight.position.set(0, -5, 12); 
             pointLight.castShadow = false;
@@ -333,8 +338,8 @@
             if (spinGroup) {
                 const intersects = raycaster.intersectObject(spinGroup, true);
                 if (intersects.length > 0) {
-                    if(spinButtonMesh) { spinButtonMesh.material.emissive.set(params.btnColor); spinButtonMesh.material.emissiveIntensity = params.btnClick; }
-                    if(spinArrowMesh) { spinArrowMesh.material.emissive.set(params.arrColor); spinArrowMesh.material.emissiveIntensity = params.arrClick; }
+                    if(spinButtonMesh && spinButtonMesh.material) { spinButtonMesh.material.emissive.set(params.btnColor); spinButtonMesh.material.emissiveIntensity = params.btnClick; }
+                    if(spinArrowMesh && spinArrowMesh.material) { spinArrowMesh.material.emissive.set(params.arrColor); spinArrowMesh.material.emissiveIntensity = params.arrClick; }
                     
                     isLightFlashing = true; 
                     setTimeout(() => isLightFlashing = false, 200);
@@ -387,7 +392,6 @@
 
                         coinInstancedMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, COIN_COUNT);
                         coinInstancedMesh.castShadow = true; 
-                        // OPTIMIZACIÓN: Las monedas reciben sombra (se ven mejor) pero no es crítico si quisieras quitarlo
                         coinInstancedMesh.receiveShadow = true; 
                         coinInstancedMesh.frustumCulled = false; 
                         for (let i = 0; i < COIN_COUNT; i++) { dummy.position.set(0, -500, 0); dummy.scale.set(0, 0, 0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
@@ -439,16 +443,16 @@
         function setupStructure(node) {
             if (node.isMesh) {
                 node.castShadow = true; 
-                // OPTIMIZACIÓN: Desactivar recepción de sombras por defecto
                 node.receiveShadow = false;
                 
-                // ACTIVAR recepción SOLO si el nombre es "Cilindro" o "cilindro"
+                // ACTIVAR recepción SOLO si el nombre incluye "cilindro"
                 if (node.name.toLowerCase().includes('cilindro')) {
                     node.receiveShadow = true;
                 }
 
                 if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
             }
+            
             if (node.name.toLowerCase() === 'spin') {
                 spinGroup = node;
                 let childMeshes = [];
@@ -469,14 +473,18 @@
                     if (arrow) { spinArrowMesh = arrow; spinButtonMesh = childMeshes.find(m => m !== arrow); } 
                     else { spinArrowMesh = childMeshes[0]; spinButtonMesh = childMeshes.length > 1 ? childMeshes[1] : null; }
                     
-                    if (spinArrowMesh) spinArrowMesh.material.emissive.set(params.arrColor);
-                    if (spinButtonMesh) spinButtonMesh.material.emissive.set(params.btnColor);
+                    if (spinArrowMesh && spinArrowMesh.material) spinArrowMesh.material.emissive.set(params.arrColor);
+                    if (spinButtonMesh && spinButtonMesh.material) spinButtonMesh.material.emissive.set(params.btnColor);
                 }
             }
         }
 
         function setupSymbol(node) {
-             if (node.isMesh) { node.castShadow = true; node.receiveShadow = false; if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; }
+             if (node.isMesh) { 
+                 node.castShadow = true; 
+                 node.receiveShadow = false; 
+                 if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; 
+             }
         }
 
         function loadStructure() {
@@ -516,6 +524,7 @@
             machineIsSpinning = true; isButtonDisabled = true; 
             isZoomed = false; adjustCameraTarget(); resetCoins();
             resultText.classList.remove('show'); resultText.style.borderColor = "#ffd700"; resultText.style.color = "#fff";
+            
             reelStates.forEach((state) => { state.mode = 'SPINNING'; state.velocity = 0; });
             for (let i = 0; i < NUM_CARRETES; i++) setTimeout(() => triggerStop(i), SPIN_DURATION_MS + (i * STOP_DELAY_MS));
         }
@@ -597,7 +606,7 @@
 
             if (isHovering && !isButtonDisabled) document.body.style.cursor = 'pointer'; else document.body.style.cursor = 'default';
 
-            // --- GESTIÓN DE LUCES ---
+            // --- LUCES ---
             if (pointLight) {
                 if (isLightFlashing) {
                     pointLight.intensity = params.lClkInt; 
@@ -617,20 +626,20 @@
             let targetIntBtn, targetIntArr;
             if (isButtonDisabled) {
                 targetIntBtn = 0.0; targetIntArr = 0.0;
-                if (spinButtonMesh) spinButtonMesh.material.color.setHex(0x333333);
-                if (spinArrowMesh) spinArrowMesh.material.color.setHex(0x333333);
+                if (spinButtonMesh && spinButtonMesh.material) spinButtonMesh.material.color.setHex(0x333333);
+                if (spinArrowMesh && spinArrowMesh.material) spinArrowMesh.material.color.setHex(0x333333);
             } else {
-                if (spinButtonMesh && spinButtonMesh.userData.origColor) spinButtonMesh.material.color.copy(spinButtonMesh.userData.origColor);
-                if (spinArrowMesh && spinArrowMesh.userData.origColor) spinArrowMesh.material.color.copy(spinArrowMesh.userData.origColor);
+                if (spinButtonMesh && spinButtonMesh.material && spinButtonMesh.userData.origColor) spinButtonMesh.material.color.copy(spinButtonMesh.userData.origColor);
+                if (spinArrowMesh && spinArrowMesh.material && spinArrowMesh.userData.origColor) spinArrowMesh.material.color.copy(spinArrowMesh.userData.origColor);
                 if (isHovering) { targetIntBtn = params.btnHover; targetIntArr = params.arrHover; } 
                 else { targetIntBtn = params.btnIdle; targetIntArr = params.arrIdle; }
             }
 
-            if (spinButtonMesh) {
+            if (spinButtonMesh && spinButtonMesh.material) {
                 spinButtonMesh.material.emissiveIntensity += (targetIntBtn - spinButtonMesh.material.emissiveIntensity) * 0.15 * timeScale;
                 spinButtonMesh.material.emissive.lerp(new THREE.Color(params.btnColor), 0.2 * timeScale);
             }
-            if (spinArrowMesh) {
+            if (spinArrowMesh && spinArrowMesh.material) {
                 spinArrowMesh.material.emissiveIntensity += (targetIntArr - spinArrowMesh.material.emissiveIntensity) * 0.15 * timeScale;
                 spinArrowMesh.material.emissive.lerp(new THREE.Color(params.arrColor), 0.2 * timeScale);
             }
@@ -645,7 +654,13 @@
                 }
             }
 
-            if (!isVRMode) camera.position.z += (targetZ - camera.position.z) * 0.05 * timeScale; else camera.position.z = Z_VR; 
+            // --- LÓGICA DE MOVIMIENTO DE CÁMARA (VERTICAL) ---
+            if (!isVRMode) {
+                camera.position.z += (targetZ - camera.position.z) * 0.05 * timeScale;
+                camera.position.y += (targetY - camera.position.y) * 0.05 * timeScale; // Interpolación suave Y
+            } else {
+                camera.position.z = Z_VR; 
+            }
 
             let allReelsIdle = true;
             reels.forEach((reel, i) => {
@@ -674,8 +689,23 @@
         function adjustCameraTarget() {
             const width = window.innerWidth; const height = window.innerHeight; const aspect = width / height;
             let idealZ = zNormal; 
-            if (isVRMode) idealZ = Z_VR; else if (isZoomed) idealZ = Z_ZOOM;
-            if (aspect < 1.0 && !isVRMode) targetZ = idealZ / (aspect * 1.35); else targetZ = idealZ;
+            
+            if (isVRMode) {
+                idealZ = Z_VR;
+            } else if (isZoomed) {
+                idealZ = Z_ZOOM;
+            }
+            
+            // --- AJUSTE VERTICAL ---
+            if (aspect < 1.0 && !isVRMode) {
+                // MODO VERTICAL (MÓVIL)
+                targetZ = idealZ / (aspect * 1.35); 
+                targetY = -5.0; // Bajar la cámara para subir el objeto visualmente
+            } else {
+                // MODO HORIZONTAL (PC)
+                targetZ = idealZ;
+                targetY = 0.0;
+            }
         }
 
         exitFsBtn.addEventListener('click', () => {

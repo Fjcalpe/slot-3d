@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Test Sombras 512</title>
+    <title>Slot Pro: Test Sombras Móvil</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -187,7 +187,7 @@
         
         // --- OPTIMIZACIÓN BASADA EN DISPOSITIVO ---
         const COIN_COUNT = isMobile ? 50 : 150; 
-        const SHADOW_MAP_SIZE = isMobile ? 512 : 2048; // CAMBIO: 512 para móvil
+        const SHADOW_MAP_SIZE = isMobile ? 512 : 2048; // 512 for mobile to limit cost
         const RENDERER_ANTIALIAS = !isMobile; 
         const ENABLE_BLOOM = !isMobile; 
 
@@ -287,11 +287,12 @@
         const sunLight = new THREE.DirectionalLight(params.sunColor, params.sunInt); 
         sunLight.position.set(-10, 30, 20); 
         
-        // Habilitar sombras CONDICIONALMENTE
-        sunLight.castShadow = !isMobile;
+        // --- CAMBIO CLAVE: FORZAR SOMBRAS (castShadow = true) ---
+        // Las sombras se activan siempre para el test móvil/Shadow Catcher.
+        sunLight.castShadow = true; 
         
         const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-        sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); // CAMBIO A SHADOW_MAP_SIZE
+        sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); 
         sunLight.shadow.bias = -0.0005; 
         sunLight.shadow.radius = 2; 
         
@@ -311,6 +312,33 @@
         }
         fillLight.castShadow = false; 
         
+
+        // --- SHADOW CATCHER (CILINDRO SIMPLE) ---
+        // Usado para capturar sombras sobre el rodillo GLB con geometría simple para el cálculo.
+        if (sunLight.castShadow) {
+            const catcherRadius = 8.0; 
+            const catcherHeight = 15.0; 
+            const catcherGeometry = new THREE.CylinderGeometry(catcherRadius, catcherRadius, catcherHeight, 12, 1);
+            
+            // Material semitransparente, oscuro, que solo recibe sombras
+            const catcherMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x050505, // Oscuro para que la sombra se vea mejor
+                transparent: true, 
+                opacity: 0.5,
+                depthWrite: false 
+            }); 
+            
+            const shadowCatcher = new THREE.Mesh(catcherGeometry, catcherMaterial);
+            shadowCatcher.rotation.x = Math.PI / 2; 
+            shadowCatcher.position.set(0, 0, 0); 
+            
+            shadowCatcher.receiveShadow = true;
+            shadowCatcher.visible = true;
+            
+            scene.add(shadowCatcher);
+        }
+        // --- FIN: SHADOW CATCHER ---
+
 
         pointLight = new THREE.PointLight(0xffaa00, 0, 100);
         pointLight.position.set(0, -5, 12); 
@@ -393,12 +421,11 @@
                     if (coinGeometry && coinMaterial) {
                         if (coinMaterial.map) coinMaterial.map.colorSpace = THREE.SRGBColorSpace;
                         coinMaterial.emissive = new THREE.Color(0xffaa00); 
-                        coinMaterial.emissiveIntensity = 0.0; 
                         coinMaterial.metalness = 1.0; 
                         coinMaterial.roughness = 0.3;
 
                         coinInstancedMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, COIN_COUNT);
-                        // Habilitamos cast/receive shadow para las monedas SOLO si sunLight.castShadow es true (Escritorio)
+                        // Habilitamos cast/receive shadow para las monedas ya que sunLight.castShadow es true
                         coinInstancedMesh.castShadow = sunLight.castShadow; 
                         coinInstancedMesh.receiveShadow = sunLight.castShadow; 
                         coinInstancedMesh.frustumCulled = false; 
@@ -432,7 +459,7 @@
             }
             
             const mesh = new THREE.Mesh(geometry, material);
-            // HABILITAR CAST SHADOW SÓLO si sunLight.castShadow es TRUE (Escritorio)
+            // El símbolo PROYECTARÁ sombra
             mesh.castShadow = sunLight.castShadow;
             mesh.receiveShadow = false; 
             return mesh;
@@ -487,9 +514,10 @@
 
         function setupStructure(node) {
             if (node.isMesh) {
-                // El cilindro recibe sombras si sunLight.castShadow es true (Escritorio)
+                // El cuerpo GLB de la máquina PROYECTARÁ sombra (si sunLight.castShadow es true)
                 node.castShadow = sunLight.castShadow; 
-                node.receiveShadow = sunLight.castShadow; 
+                // El cuerpo GLB de la máquina NO recibirá sombras, el Shadow Catcher invisible lo hará
+                node.receiveShadow = false; 
                 if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
             }
             if (node.name.toLowerCase() === 'spin') {
@@ -519,7 +547,7 @@
         }
 
         function setupSymbol(node) {
-             // El símbolo proyectará sombra si sunLight.castShadow es TRUE (Escritorio)
+             // El símbolo proyectará sombra (sunLight.castShadow es TRUE)
              if (node.isMesh) { node.castShadow = sunLight.castShadow; node.receiveShadow = false; if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; }
         }
 
@@ -762,7 +790,7 @@
             const width = window.innerWidth; const height = window.innerHeight;
             renderer.setSize(width, height); effectVR.setSize(width, height); composer.setSize(width, height);
             const pixelRatio = renderer.getPixelRatio();
-            fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio); fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
+            fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio); fxaaPass.material.uniforms['resolution'].value.y = 1 / (window.innerHeight * pixelRatio);
             const aspect = width / height; camera.aspect = aspect; camera.updateProjectionMatrix(); adjustCameraTarget();
         }
 

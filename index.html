@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Mobile Adjusted</title>
+    <title>Slot Pro: Final Stable</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         
@@ -44,6 +44,7 @@
             align-items: center; justify-content: center;
         }
 
+        /* Slider visible en VR (sin clase ui-element) */
         #slider-container {
             position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
             z-index: 40; width: 200px; text-align: center;
@@ -101,7 +102,7 @@
         <div id="result-text">LISTO</div>
     </div>
 
-    <div id="slider-container" class="ui-element">
+    <div id="slider-container">
         <label for="cam-slider">Distancia Cámara</label>
         <input type="range" id="cam-slider" min="10" max="60" value="22" step="1">
     </div>
@@ -142,7 +143,7 @@
             btnColor: "#ffffff", btnIdle: 0.0, btnHover: 0.7, btnClick: 20.8,
             arrColor: "#fff68f", arrIdle: 0.2, arrHover: 0.6, arrClick: 14.8,
             
-            // --- LUCES CLÁSICAS ---
+            // Luces Clásicas
             lHovColor: "#ffaa00", lHovInt: 200, lHovDist: 22,
             lClkColor: "#ffe6aa", lClkInt: 576, lClkDist: 134,
             sunColor: "#fffee0", sunInt: 3.0,
@@ -166,13 +167,13 @@
         const SPRING_TENSION = 0.25;   
         const SPRING_DAMPING = 0.80;   
         
-        // --- CÁMARA ---
+        // --- VARIABLES CÁMARA (DUAL VR/NORMAL) ---
         let zNormal = 22; 
-        let targetZ = zNormal; 
-        let targetY = 0; // Nueva variable para mover la cámara verticalmente
+        let zVR = 42; 
         
+        let targetZ = zNormal; 
+        let targetY = 0; 
         const Z_ZOOM = 14; 
-        const Z_VR = 42; 
         
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
@@ -285,7 +286,7 @@
             sunLight.shadow.radius = 2; 
             scene.add(sunLight);
 
-            // 3. Relleno con Pivot (Código antiguo)
+            // 3. Relleno con Pivot
             const fillPivot = new THREE.Object3D();
             fillPivot.rotation.set(-3.06, -1.36, -2.31); 
             scene.add(fillPivot);
@@ -293,7 +294,7 @@
             fillLight.position.set(-8.10, -4.57, -7.28); 
             fillPivot.add(fillLight); 
 
-            // 4. Flash del botón (Posición Y = -5)
+            // 4. Flash del botón
             pointLight = new THREE.PointLight(0xffaa00, 0, 100);
             pointLight.position.set(0, -5, 12); 
             pointLight.castShadow = false;
@@ -310,8 +311,15 @@
         // =====================================================================
         // INTERACCIÓN
         // =====================================================================
+        
+        // Listener del Slider (Actualiza la variable correcta según modo)
         camSlider.addEventListener('input', (e) => {
-            zNormal = parseFloat(e.target.value);
+            const val = parseFloat(e.target.value);
+            if (isVRMode) {
+                zVR = val; 
+            } else {
+                zNormal = val; 
+            }
             adjustCameraTarget();
         });
 
@@ -324,14 +332,19 @@
         }
 
         function onPointerDown(event) {
-            if (isVRMode) return;
-            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+            if (isVRMode) {
+                pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+                pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+            } else {
+                pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+                pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+            }
             raycaster.setFromCamera(pointer, camera);
             
-            if (event.target.closest('.panel')) return; 
+            // Evitar disparo si se toca la UI
             if (event.target.closest('#slider-container')) return; 
             if (event.target === exitFsBtn || event.target === enterFsBtn) return;
+            if (!isVRMode && event.target.closest('.panel')) return;
 
             if (isButtonDisabled) return;
 
@@ -384,12 +397,10 @@
                     gltf.scene.traverse((node) => { if (node.isMesh) { coinGeometry = node.geometry; coinMaterial = node.material; } });
                     if (coinGeometry && coinMaterial) {
                         if (coinMaterial.map) coinMaterial.map.colorSpace = THREE.SRGBColorSpace;
-                        
                         coinMaterial.emissive = new THREE.Color(0xffaa00); 
                         coinMaterial.emissiveIntensity = 0.0; 
                         coinMaterial.metalness = 1.0; 
                         coinMaterial.roughness = 0.3;
-
                         coinInstancedMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, COIN_COUNT);
                         coinInstancedMesh.castShadow = true; 
                         coinInstancedMesh.receiveShadow = true; 
@@ -445,7 +456,7 @@
                 node.castShadow = true; 
                 node.receiveShadow = false;
                 
-                // ACTIVAR recepción SOLO si el nombre incluye "cilindro"
+                // Recibir sombras solo en cilindro
                 if (node.name.toLowerCase().includes('cilindro')) {
                     node.receiveShadow = true;
                 }
@@ -581,8 +592,15 @@
 
         vrButton.addEventListener('click', () => {
             isVRMode = !isVRMode;
-            if (isVRMode) { uiElements.forEach(el => el.classList.add('hidden-in-vr')); if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); } 
-            else { uiElements.forEach(el => el.classList.remove('hidden-in-vr')); if (document.exitFullscreen) document.exitFullscreen(); }
+            if (isVRMode) { 
+                uiElements.forEach(el => el.classList.add('hidden-in-vr')); 
+                if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); 
+                camSlider.value = zVR; // Sincroniza slider al valor VR
+            } else { 
+                uiElements.forEach(el => el.classList.remove('hidden-in-vr')); 
+                if (document.exitFullscreen) document.exitFullscreen(); 
+                camSlider.value = zNormal; // Sincroniza slider al valor Normal
+            }
             adjustCameraTarget();
         });
 
@@ -654,12 +672,13 @@
                 }
             }
 
-            // --- LÓGICA DE MOVIMIENTO DE CÁMARA (VERTICAL) ---
+            // --- LÓGICA DE MOVIMIENTO DE CÁMARA (CORREGIDA) ---
             if (!isVRMode) {
                 camera.position.z += (targetZ - camera.position.z) * 0.05 * timeScale;
-                camera.position.y += (targetY - camera.position.y) * 0.05 * timeScale; // Interpolación suave Y
+                camera.position.y += (targetY - camera.position.y) * 0.05 * timeScale; 
             } else {
-                camera.position.z = Z_VR; 
+                camera.position.z = zVR; // CORREGIDO: Usamos variable zVR (minúscula)
+                camera.position.y = 0; 
             }
 
             let allReelsIdle = true;
@@ -691,7 +710,7 @@
             let idealZ = zNormal; 
             
             if (isVRMode) {
-                idealZ = Z_VR;
+                idealZ = zVR;
             } else if (isZoomed) {
                 idealZ = Z_ZOOM;
             }
@@ -700,9 +719,9 @@
             if (aspect < 1.0 && !isVRMode) {
                 // MODO VERTICAL (MÓVIL)
                 targetZ = idealZ / (aspect * 1.35); 
-                targetY = -5.0; // Bajar la cámara para subir el objeto visualmente
+                targetY = -5.0; // Bajar la cámara
             } else {
-                // MODO HORIZONTAL (PC)
+                // MODO HORIZONTAL (PC/VR)
                 targetZ = idealZ;
                 targetY = 0.0;
             }

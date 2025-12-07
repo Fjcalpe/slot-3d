@@ -2,10 +2,10 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Solo Sol y Sombras</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Slot Pro: Delta Time Optimized</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         
         #loading {
             position: absolute; top: 50%; width: 100%; text-align: center;
@@ -98,12 +98,16 @@
               font-size: 1.1rem; font-weight: bold; border-radius: 8px; cursor: pointer;
               text-transform: uppercase; box-shadow: 0 0 15px #ffd700;
         }
+        
+        /* Debug info para verificar FPS en móvil si quieres (opcional) */
+        #fps-counter {
+            position: absolute; top: 5px; left: 5px; color: lime; font-family: monospace; font-size: 10px; z-index: 300; pointer-events: none;
+        }
     </style>
 </head>
 <body>
 
     <div id="loading">Cargando Recursos...</div>
-    
     <div id="result-panel" class="ui-element">
         <div id="result-text">LISTO</div>
     </div>
@@ -170,7 +174,9 @@
         const NUM_ITEMS_POR_RUEDA = 6; 
         const RADIO_ORBITA_SIMBOLOS = 6.0; 
         const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
-        const MAX_SPEED = 0.50; 
+        
+        // FISICA Y TIEMPO
+        const MAX_SPEED = 0.50; // Velocidad máxima por frame (Referencia 60fps)
         const SPIN_DURATION_MS = 1000; 
         const STOP_DELAY_MS = 300; 
         const SPRING_TENSION = 0.08; 
@@ -197,7 +203,6 @@
         let spinArrowMesh = null; 
         let spinGroup = null; 
         
-        // Luz puntual ELIMINADA (referencia null para no romper lógica si queda algo suelto)
         let pointLight = null; 
         let isLightFlashing = false;
 
@@ -280,10 +285,6 @@
         // =====================================================================
         // SETUP LUCES (SOLO SOL)
         // =====================================================================
-        
-        // AMBIENT LIGHT: ELIMINADA
-        // FILL LIGHT: ELIMINADA
-        // POINT LIGHT: ELIMINADA
 
         const sunLight = new THREE.DirectionalLight(params.sunColor, params.sunInt); 
         sunLight.position.set(-10, 30, 20); 
@@ -437,13 +438,9 @@
 
         function setupStructure(node) {
             if (node.isMesh) {
-                // Todas las partes de la estructura proyectan sombra
                 node.castShadow = sunLight.castShadow; 
-                // Ninguna parte de la estructura (excepto el Cilindro simplificado, manejado abajo) recibe sombra
                 node.receiveShadow = false; 
                 if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
-
-                // --- CILINDRO SIMPLIFICADO RECIBE SOMBRAS ---
                 if (node.name === 'Cilindro' || node.name === 'cilindro') {
                     node.receiveShadow = true; 
                     node.castShadow = true;
@@ -476,7 +473,6 @@
         }
 
         function setupSymbol(node) {
-             // El símbolo proyectará sombra (sunLight.castShadow es TRUE)
              if (node.isMesh) { node.castShadow = sunLight.castShadow; node.receiveShadow = false; if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; }
         }
 
@@ -585,8 +581,18 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            const delta = clock.getDelta(); 
-            updateCoins(delta);
+            
+            // --- DELTA TIME LOGIC START ---
+            let delta = clock.getDelta();
+            
+            // Seguridad: Si el delta es enorme (lagazo o cambio de tab), lo capamos a 0.1s
+            delta = Math.min(delta, 0.1); 
+            
+            // Factor de corrección: 1.0 = 60fps. >1 = menos fps.
+            const timeScale = delta * 60; 
+            // --- DELTA TIME LOGIC END ---
+
+            updateCoins(delta); // Las monedas ya usaban lógica de segundos, pasamos delta normal
             
             let isHovering = false;
             if (spinGroup && !isVRMode && !isButtonDisabled) {
@@ -613,15 +619,13 @@
             }
 
             if (spinButtonMesh) {
-                spinButtonMesh.material.emissiveIntensity += (targetIntBtn - spinButtonMesh.material.emissiveIntensity) * 0.15;
-                spinButtonMesh.material.emissive.lerp(new THREE.Color(params.btnColor), 0.2);
+                spinButtonMesh.material.emissiveIntensity += (targetIntBtn - spinButtonMesh.material.emissiveIntensity) * 0.15 * timeScale;
+                spinButtonMesh.material.emissive.lerp(new THREE.Color(params.btnColor), 0.2 * timeScale);
             }
             if (spinArrowMesh) {
-                spinArrowMesh.material.emissiveIntensity += (targetIntArr - spinArrowMesh.material.emissiveIntensity) * 0.15;
-                spinArrowMesh.material.emissive.lerp(new THREE.Color(params.arrColor), 0.2);
+                spinArrowMesh.material.emissiveIntensity += (targetIntArr - spinArrowMesh.material.emissiveIntensity) * 0.15 * timeScale;
+                spinArrowMesh.material.emissive.lerp(new THREE.Color(params.arrColor), 0.2 * timeScale);
             }
-
-            // GESTIÓN LUZ PUNTUAL ELIMINADA
 
             if (buttonMixer && buttonAction) {
                 if (isButtonAnimating) {
@@ -633,18 +637,33 @@
                 }
             }
 
-            if (!isVRMode) camera.position.z += (targetZ - camera.position.z) * 0.05; else camera.position.z = Z_VR; 
+            if (!isVRMode) camera.position.z += (targetZ - camera.position.z) * 0.05 * timeScale; else camera.position.z = Z_VR; 
 
             let allReelsIdle = true;
             reels.forEach((reel, i) => {
                 if (!reel) return;
                 const state = reelStates[i];
+                
+                // --- PHYSICS DELTA TIME CORRECTION ---
+                // Multiplicamos los incrementos por timeScale para igualar la velocidad a 60FPS
+                
                 if (state.mode === 'SPINNING') {
-                    allReelsIdle = false; if (state.velocity < MAX_SPEED) state.velocity += 0.02; reel.rotation.x += state.velocity;
+                    allReelsIdle = false; 
+                    if (state.velocity < MAX_SPEED) state.velocity += 0.02 * timeScale; 
+                    reel.rotation.x += state.velocity * timeScale;
                 } else if (state.mode === 'STOPPING') {
                     allReelsIdle = false;
                     const displacement = state.targetAngle - reel.rotation.x;
-                    state.velocity += displacement * SPRING_TENSION; state.velocity *= SPRING_DAMPING; reel.rotation.x += state.velocity;
+                    
+                    // El muelle debe ser consistente con el tiempo
+                    state.velocity += displacement * SPRING_TENSION * timeScale;
+                    
+                    // Amortiguación corregida exponencialmente según el tiempo
+                    const dampingFactor = Math.pow(SPRING_DAMPING, timeScale);
+                    state.velocity *= dampingFactor;
+                    
+                    reel.rotation.x += state.velocity * timeScale;
+                    
                     if (Math.abs(displacement) < 0.005 && Math.abs(state.velocity) < 0.005) { reel.rotation.x = state.targetAngle; state.mode = 'IDLE'; state.velocity = 0; }
                 }
             });
@@ -656,16 +675,14 @@
         }
 
         // =====================================================================
-        // AJUSTE DE CÁMARA (SOLUCIÓN MÓVIL Y DESKTOP)
+        // AJUSTE DE CÁMARA
         // =====================================================================
         function adjustCameraTarget() {
             const width = window.innerWidth; const height = window.innerHeight; const aspect = width / height;
-            // AHORA USAMOS zNormal (variable) en lugar de constante
             let idealZ = zNormal; 
             
             if (isVRMode) idealZ = Z_VR; else if (isZoomed) idealZ = Z_ZOOM;
             
-            // Si el aspecto es menor a 1 (vertical), dividimos por un número mayor (1.35) para acercar
             if (aspect < 1.0 && !isVRMode) targetZ = idealZ / (aspect * 1.35); else targetZ = idealZ;
         }
 
@@ -673,31 +690,24 @@
         // GESTIÓN DE PANTALLA COMPLETA Y ORIENTACIÓN
         // =====================================================================
         
-        // Botón EXIT: Salir de pantalla completa
         exitFsBtn.addEventListener('click', () => {
             if (document.exitFullscreen) document.exitFullscreen();
             else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); // Safari
         });
 
-        // Botón ENTRAR: Solicitar pantalla completa (requiere interacción del usuario)
         enterFsBtn.addEventListener('click', () => {
             const docEl = document.documentElement;
             if (docEl.requestFullscreen) docEl.requestFullscreen();
             else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen(); // Safari
-            // Ocultamos el overlay inmediatamente tras el click
             landscapeOverlay.style.display = 'none';
         });
 
-        // Función para comprobar si debemos mostrar el overlay
         function checkOrientation() {
-            // Solo ejecutar en dispositivos móviles
             if (!isMobile) return;
 
             const isLandscape = window.innerWidth > window.innerHeight;
-            // Comprobar si YA estamos en pantalla completa usando API estándar o Webkit
             const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
 
-            // Si es horizontal Y NO estamos ya en pantalla completa, mostrar el botón
             if (isLandscape && !isFullscreen) {
                 landscapeOverlay.style.display = 'flex';
             } else {
@@ -715,10 +725,9 @@
 
         window.addEventListener('resize', () => {
             onWindowResize();
-            checkOrientation(); // Comprobar orientación al redimensionar
+            checkOrientation(); 
         });
         
-        // Listener específico para cambios de pantalla completa (para actualizar el botón EXIT y el overlay)
         document.addEventListener('fullscreenchange', checkOrientation);
         document.addEventListener('webkitfullscreenchange', checkOrientation);
         

@@ -3,116 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Final (No Coin Shadows)</title>
+    <title>Slot Pro: Zoom Fix</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
+        body { 
+            margin: 0; overflow: hidden; 
+            background-color: #000; 
+            font-family: 'Segoe UI', sans-serif; touch-action: none; 
+        }
         
         #loading {
-            position: absolute; top: 50%; width: 100%; text-align: center;
-            color: #ffd700; font-size: 1.5rem; 
+            position: absolute; top: 50%; width: 100%; text-align: center; left: 0;
+            color: #ffd700; font-size: 1.2rem; 
             text-shadow: 2px 2px 4px #000; transition: opacity 0.5s;
-            pointer-events: none; z-index: 10;
+            pointer-events: none; z-index: 200;
+            background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px;
         }
 
-        #result-panel {
-            position: absolute; top: 5vh; width: 100%; text-align: center;
-            pointer-events: none; z-index: 20;
-            transition: opacity 0.3s;
-        }
         #result-text {
-            display: inline-block;
-            background-color: rgba(0, 0, 0, 0.85);
-            border: 2px solid #ffd700;
-            border-radius: 8px;
-            padding: 10px 30px;
-            color: #fff;
-            font-size: clamp(1rem, 4vw, 1.5rem); 
-            font-weight: bold;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            opacity: 0;
-            transform: translateY(-20px);
-            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: absolute; top: 15vh; width: 100%; text-align: center;
+            color: #fff; font-size: 2rem; font-weight: bold;
+            text-shadow: 0 0 15px #ffd700; z-index: 20;
+            pointer-events: none; opacity: 0; transition: opacity 0.3s; transform: scale(0.8);
         }
-        #result-text.show { opacity: 1; transform: translateY(0); }
+        #result-text.show { opacity: 1; transform: scale(1); }
 
         #vr-btn {
-            position: absolute; bottom: 20px; left: 20px; z-index: 30;
+            position: absolute; bottom: 20px; left: 20px; z-index: 100;
             background: rgba(0,0,0,0.5); border: 2px solid #fff;
             color: #fff; border-radius: 50%; width: 50px; height: 50px;
             font-size: 24px; cursor: pointer; display: flex;
-            align-items: center; justify-content: center;
+            align-items: center; justify-content: center; transition: transform 0.2s;
         }
-
-        #slider-container {
-            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-            z-index: 40; width: 200px; text-align: center;
-            background: rgba(0,0,0,0.5); padding: 10px; border-radius: 20px;
-            border: 1px solid #555;
-        }
-        #slider-container label {
-            display: block; color: #ffd700; font-size: 12px; margin-bottom: 5px; font-weight: bold; text-transform: uppercase;
-        }
-        #cam-slider { width: 100%; cursor: pointer; }
-
-        .panel {
-            position: absolute; top: 10px;
-            width: 270px; max-height: 90vh; overflow-y: auto;
-            background: rgba(0, 0, 0, 0.9); 
-            border: 1px solid #ffd700; color: #eee; padding: 15px; 
-            border-radius: 8px; font-size: 11px; z-index: 100;
-            font-family: monospace;
-        }
-        .hidden-in-vr { opacity: 0 !important; pointer-events: none !important; }
+        #vr-btn:active { transform: scale(0.9); }
         
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #222; }
-        ::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
-
         #exit-fs-btn {
-            position: absolute; bottom: 20px; right: 20px; z-index: 150;
+            position: absolute; top: 20px; right: 20px; z-index: 150;
             background: rgba(200, 0, 0, 0.8); color: #fff; border: 1px solid #fff;
             padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;
-            display: none; 
-            text-transform: uppercase; font-size: 12px; letter-spacing: 1px;
+            display: none; text-transform: uppercase; font-size: 10px;
         }
         :fullscreen #exit-fs-btn, :-webkit-full-screen #exit-fs-btn { display: block; }
-
-        #landscape-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95); z-index: 200;
-            display: none; 
-            align-items: center; justify-content: center; flex-direction: column;
-            color: #ffd700; text-align: center; padding: 20px; box-sizing: border-box;
-        }
-        #landscape-overlay p { font-size: 1.2rem; margin-bottom: 25px; text-transform: uppercase; }
-        #enter-fs-btn {
-              background: #ffd700; color: #000; border: none; padding: 15px 30px;
-              font-size: 1.1rem; font-weight: bold; border-radius: 8px; cursor: pointer;
-              text-transform: uppercase; box-shadow: 0 0 15px #ffd700;
-        }
     </style>
 </head>
 <body>
 
     <div id="loading">Cargando Recursos...</div>
-    
-    <div id="result-panel" class="ui-element">
-        <div id="result-text">LISTO</div>
-    </div>
-
-    <div id="slider-container">
-        <label for="cam-slider">Distancia Cámara</label>
-        <input type="range" id="cam-slider" min="10" max="60" value="22" step="1">
-    </div>
+    <div id="result-text">LISTO</div>
 
     <button id="vr-btn" title="Modo VR">👓</button>
-    <button id="exit-fs-btn">EXIT FULLSCREEN</button>
-
-    <div id="landscape-overlay">
-        <p>¡Modo Horizontal Detectado!</p>
-        <button id="enter-fs-btn">Jugar en Pantalla Completa</button>
-    </div>
+    <button id="exit-fs-btn">SALIR PANTALLA COMPLETA</button>
 
     <script type="importmap">
         {
@@ -129,202 +68,88 @@
         import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
 
         // =====================================================================
-        // PARÁMETROS GLOBALES
+        // 1. CONFIGURACIÓN
         // =====================================================================
-        const params = {
-            btnColor: "#ffffff", btnIdle: 0.0, btnHover: 0.7, btnClick: 20.8,
-            arrColor: "#fff68f", arrIdle: 0.2, arrHover: 0.6, arrClick: 14.8,
-            
-            lHovColor: "#ffaa00", lHovInt: 200, lHovDist: 22,
-            lClkColor: "#ffe6aa", lClkInt: 576, lClkDist: 134,
-            sunColor: "#fffee0", sunInt: 3.0,
-            ambColor: "#ffffff", ambInt: 0.6,
-        };
-
-        const ARCHIVOS_GLB = ['sirena.glb']; 
-        const NOMBRES_SIMBOLOS = ['Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena']; 
+        const loadingText = document.getElementById('loading');
+        const resultText = document.getElementById('result-text');
         
-        const AJUSTE_ROTACION_X = 0; 
-        const NUM_CARRETES = 3; 
-        const SEPARACION_CARRETES = 4.5; 
-        const NUM_ITEMS_POR_RUEDA = 8; 
-        const RADIO_ORBITA_SIMBOLOS = 6.0; 
+        // VALORES DE CÁMARA (CALIBRADOS)
+        const CAM_LAND_DIST = 25.0;  
+        const CAM_LAND_Y = -2.0;     
+        const CAM_PORT_DIST = 29.5;  
+        const CAM_PORT_Y = -4.5;     
+        
+        const Z_VR = 42; 
+        const Z_ZOOM = 14; 
+
+        const NUM_CARRETES = 3;
+        const SEPARACION_CARRETES = 4.5;
+        const NUM_ITEMS_POR_RUEDA = 8;
+        const RADIO_ORBITA_SIMBOLOS = 6.0;
         const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
         
-        const MAX_SPEED = 0.50; 
-        const SPIN_DURATION_MS = 500;  
-        const STOP_DELAY_MS = 150;     
-        const SPRING_TENSION = 0.25;    
-        const SPRING_DAMPING = 0.80;    
+        const ARCHIVOS_GLB = ['sirena.glb']; 
+        const NOMBRES_SIMBOLOS = ['Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena'];
         
-        let zNormal = 22; 
-        let zVR = 42; 
-        
-        let targetZ = zNormal; 
-        let targetY = 0; 
-        const Z_ZOOM = 14; 
-        
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        
+        const params = { btnColor: "#ffffff", btnClick: 20.8, arrColor: "#fff68f", arrClick: 14.8 };
+
         const COIN_COUNT = 150; 
-        const SHADOW_MAP_SIZE = 1024; 
-        
-        const RENDERER_ANTIALIAS = true; // Hardware AA activado
-        
-        const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8; 
+        const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8;
 
-        const raycaster = new THREE.Raycaster();
-        const pointer = new THREE.Vector2();
-        
-        let spinButtonMesh = null; 
-        let spinArrowMesh = null; 
-        let spinGroup = null; 
-        
-        let pointLight = null; 
-        let isLightFlashing = false;
-
-        let buttonMixer = null; 
-        let buttonAction = null; 
-        let isButtonAnimating = false; 
-        
-        let machineIsSpinning = false;
-        let isButtonDisabled = false;
-        let isZoomed = false; 
-        
-        const ANIM_FPS = 30;
-        const TIME_Hover = 10 / ANIM_FPS; 
-        const TIME_ClickEnd = 8 / ANIM_FPS; 
-        
-        const resultText = document.getElementById('result-text');
-        const loadingText = document.getElementById('loading');
-        const vrButton = document.getElementById('vr-btn');
-        const uiElements = document.querySelectorAll('.ui-element');
-        const camSlider = document.getElementById('cam-slider');
-
-        const exitFsBtn = document.getElementById('exit-fs-btn');
-        const landscapeOverlay = document.getElementById('landscape-overlay');
-        const enterFsBtn = document.getElementById('enter-fs-btn');
-
-        const reelStates = Array(NUM_CARRETES).fill(null).map(() => ({ mode: 'IDLE', velocity: 0, targetAngle: 0 }));
-        const symbolMasters = {};
-        let coinInstancedMesh;
-        const dummy = new THREE.Object3D(); 
-        const coinsData = []; 
-        for(let i=0; i<COIN_COUNT; i++) coinsData.push({ position: new THREE.Vector3(), velocity: new THREE.Vector3(), rotation: new THREE.Euler(), rotSpeed: new THREE.Vector3(), active: false });
-
+        // =====================================================================
+        // 2. ESCENA Y RENDERER
+        // =====================================================================
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x050505); 
-        
-        const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 150);
-        
-        const renderer = new THREE.WebGLRenderer({ antialias: RENDERER_ANTIALIAS, powerPreference: "high-performance" }); 
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        
-        // PixelRatio a 1 para rendimiento máximo en móviles con AA
-        renderer.setPixelRatio(1); 
-        
-        renderer.shadowMap.enabled = true; 
-        renderer.shadowMap.type = THREE.PCFShadowMap; 
-        
-        renderer.toneMapping = THREE.NoToneMapping; 
+        scene.background = new THREE.Color(0x050505);
 
+        const cameraLandscape = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 150);
+        const cameraPortrait = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 150);
+        let activeCamera = cameraLandscape; 
+
+        let targetZ = CAM_LAND_DIST;
+        let targetY = CAM_LAND_Y;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(1); 
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFShadowMap; 
         document.body.appendChild(renderer.domElement);
 
         const effectVR = new StereoEffect(renderer);
-        effectVR.eyeSeparation = 0.005; 
+        effectVR.eyeSeparation = 0.005;
         effectVR.setSize(window.innerWidth, window.innerHeight);
 
-        let isVRMode = false;
-
-        function createLights() {
-            const ambientLight = new THREE.AmbientLight(params.ambColor, params.ambInt); 
-            scene.add(ambientLight);
-
-            const sunLight = new THREE.DirectionalLight(params.sunColor, params.sunInt); 
-            sunLight.position.set(-10, 30, 20); 
-            sunLight.castShadow = true;
-            
-            // SOMBRAS OPTIMIZADAS (Caja pequeña = Más resolución aparente)
-            const d = 12; 
-            sunLight.shadow.camera.left = -d; 
-            sunLight.shadow.camera.right = d; 
-            sunLight.shadow.camera.top = d; 
-            sunLight.shadow.camera.bottom = -d;
-            
-            sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); 
-            sunLight.shadow.bias = -0.001; 
-            sunLight.shadow.radius = 1; 
-            scene.add(sunLight);
-
-            const fillPivot = new THREE.Object3D();
-            fillPivot.rotation.set(-3.06, -1.36, -2.31); 
-            scene.add(fillPivot);
-            const fillLight = new THREE.DirectionalLight("#fffee0", 2.0); 
-            fillLight.position.set(-8.10, -4.57, -7.28); 
-            fillPivot.add(fillLight); 
-
-            pointLight = new THREE.PointLight(0xffaa00, 0, 100);
-            pointLight.position.set(0, -5, 12); 
-            pointLight.castShadow = false;
-            scene.add(pointLight);
-        }
-
-        createLights();
-
+        // Variables Globales
         const loader = new GLTFLoader();
         const textureLoader = new THREE.TextureLoader();
-        const reels = []; 
         const clock = new THREE.Clock();
+        const reels = [];
+        const reelStates = Array(NUM_CARRETES).fill(null).map(() => ({ mode: 'IDLE', velocity: 0, targetAngle: 0 }));
+        const symbolMasters = {};
+        const coinsData = [];
+        let coinInstancedMesh, dummy = new THREE.Object3D();
         
-        camSlider.addEventListener('input', (e) => {
-            const val = parseFloat(e.target.value);
-            if (isVRMode) { zVR = val; } else { zNormal = val; }
-            adjustCameraTarget();
-        });
+        let spinGroup = null;          
+        let structureGroup = null;     
+        
+        let spinButtonMesh = null, spinArrowMesh = null;
+        let machineIsSpinning = false, isButtonDisabled = false, isZoomed = false, isVRMode = false;
+        let buttonMixer = null, buttonAction = null;
+        let pointLight = null, isLightFlashing = false;
 
-        window.addEventListener('pointermove', onPointerMove);
-        window.addEventListener('pointerdown', onPointerDown);
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
 
-        function onPointerMove(event) {
-            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
-        }
-
-        function onPointerDown(event) {
-            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
-
-            raycaster.setFromCamera(pointer, camera);
-            
-            if (event.target.closest('#slider-container')) return; 
-            if (event.target === exitFsBtn || event.target === enterFsBtn) return;
-            if (!isVRMode && event.target.closest('.panel')) return;
-
-            if (isButtonDisabled) return;
-
-            if (spinGroup) {
-                const intersects = raycaster.intersectObject(spinGroup, true);
-                if (intersects.length > 0) {
-                    if(spinButtonMesh && spinButtonMesh.material) { spinButtonMesh.material.emissive.set(params.btnColor); spinButtonMesh.material.emissiveIntensity = params.btnClick; }
-                    if(spinArrowMesh && spinArrowMesh.material) { spinArrowMesh.material.emissive.set(params.arrColor); spinArrowMesh.material.emissiveIntensity = params.arrClick; }
-                    
-                    isLightFlashing = true; 
-                    setTimeout(() => isLightFlashing = false, 200);
-                    
-                    triggerButtonAnimation();
-                    spinMachine();
-                }
-            }
-        }
-
-        function triggerButtonAnimation() {
-            if (!buttonAction) return;
-            isButtonAnimating = true; buttonAction.reset(); buttonAction.time = 0; buttonAction.play(); buttonAction.paused = false;
-        }
+        // =====================================================================
+        // 3. INICIALIZACIÓN
+        // =====================================================================
+        init();
 
         async function init() {
             try {
-                loadingText.innerText = "Cargando...";
+                loadingText.innerText = "Cargando Entorno...";
+                
                 const cubemapTexture = await new Promise((resolve, reject) => textureLoader.load('cubemap.jpg', resolve, undefined, reject));
                 cubemapTexture.mapping = THREE.EquirectangularReflectionMapping;
                 const pmremGenerator = new THREE.PMREMGenerator(renderer);
@@ -332,63 +157,312 @@
                 scene.environment = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
                 cubemapTexture.dispose(); pmremGenerator.dispose();
 
-                await loadStructure(); 
-                await loadCoinSystem(); 
-                await loadSymbolMasters(); 
-                
+                createLights();
+
+                loadingText.innerText = "Cargando Modelos...";
+                await safeLoadSymbol('sirena.glb');
+                await safeLoadStructure('cilindro.glb');
+                await safeLoadCoins('moneda.glb');
+
+                loadingText.innerText = "Construyendo Slot...";
                 for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
-                loadingText.style.opacity = 0;
+
+                for(let i=0; i<COIN_COUNT; i++) coinsData.push({ position: new THREE.Vector3(), velocity: new THREE.Vector3(), rotation: new THREE.Euler(), rotSpeed: new THREE.Vector3(), active: false });
+
+                loadingText.style.display = 'none';
                 
-                checkOrientation();
+                window.addEventListener('resize', onWindowResize);
+                window.addEventListener('pointerdown', onPointerDown);
+                
+                document.getElementById('vr-btn').addEventListener('click', toggleVR);
+
+                onWindowResize(); 
                 animate();
-            } catch (error) { loadingText.innerText = "Error (Ver consola)"; console.error(error); }
+
+            } catch (err) {
+                loadingText.innerText = "Error: " + err.message;
+                console.error(err);
+            }
         }
 
-        function loadCoinSystem() {
-            return new Promise((resolve, reject) => {
-                loader.load('moneda.glb', (gltf) => {
-                    let coinGeometry, coinMaterial;
-                    gltf.scene.traverse((node) => { if (node.isMesh) { coinGeometry = node.geometry; coinMaterial = node.material; } });
-                    if (coinGeometry && coinMaterial) {
-                        if (coinMaterial.map) coinMaterial.map.colorSpace = THREE.SRGBColorSpace;
-                        coinMaterial.emissive = new THREE.Color(0xffaa00); 
-                        coinMaterial.emissiveIntensity = 0.0; 
-                        coinMaterial.metalness = 1.0; 
-                        coinMaterial.roughness = 0.3;
-                        coinInstancedMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, COIN_COUNT);
-                        
-                        // --- OPTIMIZACIÓN: MONEDAS NO PROYECTAN SOMBRA ---
-                        coinInstancedMesh.castShadow = false; 
-                        coinInstancedMesh.receiveShadow = true; 
-                        
-                        coinInstancedMesh.frustumCulled = false; 
-                        for (let i = 0; i < COIN_COUNT; i++) { dummy.position.set(0, -500, 0); dummy.scale.set(0, 0, 0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
-                        coinInstancedMesh.instanceMatrix.needsUpdate = true; scene.add(coinInstancedMesh);
-                    }
+        // --- CARGA SEGURA ---
+        async function safeLoadSymbol(file) {
+            return new Promise(resolve => {
+                loader.load(file, (gltf) => {
+                    symbolMasters[file] = gltf.scene;
                     resolve();
-                }, undefined, reject);
+                }, undefined, () => {
+                    console.warn(file + " no encontrado. Usando Cubo.");
+                    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color:0xff0000}));
+                    const g = new THREE.Group(); g.add(mesh);
+                    symbolMasters[file] = g;
+                    resolve();
+                });
             });
         }
+
+        async function safeLoadStructure(file) {
+            return new Promise(resolve => {
+                loader.load(file, (gltf) => {
+                    setupStructure(gltf.scene);
+                    if(gltf.animations.length) {
+                        buttonMixer = new THREE.AnimationMixer(gltf.scene);
+                        buttonAction = buttonMixer.clipAction(gltf.animations[0]);
+                        buttonAction.loop = THREE.LoopOnce; buttonAction.clampWhenFinished = true;
+                    }
+                    scene.add(gltf.scene);
+                    resolve();
+                }, undefined, () => {
+                    console.warn("Estructura no encontrada.");
+                    resolve();
+                });
+            });
+        }
+
+        async function safeLoadCoins(file) {
+            return new Promise(resolve => {
+                loader.load(file, (gltf) => {
+                    let geo, mat;
+                    gltf.scene.traverse(n => { if(n.isMesh){ geo = n.geometry; mat = n.material; } });
+                    if(mat) mat.emissive = new THREE.Color(0xffaa00);
+                    createCoinMesh(geo, mat);
+                    resolve();
+                }, undefined, () => {
+                    const geo = new THREE.CylinderGeometry(0.5,0.5,0.1,8);
+                    const mat = new THREE.MeshStandardMaterial({color:0xffd700});
+                    createCoinMesh(geo, mat);
+                    resolve();
+                });
+            });
+        }
+
+        function createCoinMesh(geo, mat) {
+            coinInstancedMesh = new THREE.InstancedMesh(geo, mat, COIN_COUNT);
+            coinInstancedMesh.castShadow = false; 
+            coinInstancedMesh.receiveShadow = true;
+            for(let i=0; i<COIN_COUNT; i++) { dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
+            coinInstancedMesh.instanceMatrix.needsUpdate = true;
+            scene.add(coinInstancedMesh);
+        }
+
+        // =====================================================================
+        // 4. ESCENA Y OBJETOS
+        // =====================================================================
+        function createLights() {
+            const amb = new THREE.AmbientLight(0xffffff, 0.6); 
+            scene.add(amb);
+            
+            const sun = new THREE.DirectionalLight(0xfffee0, 3.0);
+            sun.position.set(-10, 30, 20);
+            sun.castShadow = true;
+            sun.shadow.mapSize.set(1024, 1024); 
+            const d = 14; 
+            sun.shadow.camera.left = -d; sun.shadow.camera.right = d; 
+            sun.shadow.camera.top = d; sun.shadow.camera.bottom = -d;
+            sun.shadow.bias = -0.001;
+            scene.add(sun);
+
+            const fillPivot = new THREE.Object3D();
+            fillPivot.rotation.set(-3.06, -1.36, -2.31);
+            scene.add(fillPivot);
+            const fillLight = new THREE.DirectionalLight("#fffee0", 2.0);
+            fillLight.position.set(-8.10, -4.57, -7.28);
+            fillPivot.add(fillLight);
+
+            pointLight = new THREE.PointLight(0xffaa00, 0, 100);
+            pointLight.position.set(0, -5, 12);
+            scene.add(pointLight);
+        }
+
+        function setupStructure(node) {
+            structureGroup = node;
+
+            if (node.name.toLowerCase() === 'spin') {
+                spinGroup = node;
+                node.traverse((child) => {
+                     if (child.isMesh) {
+                        child.material = child.material.clone();
+                        child.userData.origColor = child.material.color.clone();
+                        if(child.name.includes('arrow')) spinArrowMesh = child;
+                        else spinButtonMesh = child;
+                     }
+                });
+            }
+            node.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+        }
+
+        function setupSymbol(node) {
+             if (node.isMesh) { 
+                 node.castShadow = true; 
+                 node.receiveShadow = false; 
+             }
+        }
+
+        function crearHilera(index) {
+            const reelGroup = new THREE.Group();
+            reelGroup.position.x = (index * SEPARACION_CARRETES) - ((NUM_CARRETES - 1) * SEPARACION_CARRETES / 2);
+            scene.add(reelGroup);
+            reels.push(reelGroup);
+            
+            for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
+                const model = symbolMasters['sirena.glb'].clone();
+                const pivot = new THREE.Group();
+                pivot.rotation.x = (i * ANGLE_STEP);
+                model.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
+                model.traverse(setupSymbol);
+                pivot.add(model);
+                reelGroup.add(pivot);
+            }
+        }
+
+        // =====================================================================
+        // 5. LÓGICA DE JUEGO Y CÁMARA
+        // =====================================================================
         
-        function loadSymbolMasters() {
-             const uniqueFiles = [...new Set(ARCHIVOS_GLB)];
-             const promises = uniqueFiles.map(file => new Promise((resolve, reject) => loader.load(file, (gltf) => { symbolMasters[file] = gltf.scene; resolve(); }, undefined, reject)));
-             return Promise.all(promises);
+        function toggleVR() {
+            isVRMode = !isVRMode;
+            if (isVRMode) { 
+                 if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+                 activeCamera = cameraLandscape; 
+            } else {
+                 if (document.exitFullscreen) document.exitFullscreen();
+                 onWindowResize(); 
+            }
+            adjustCameraTarget();
+        }
+
+        function onWindowResize() {
+            const w = window.innerWidth, h = window.innerHeight;
+            renderer.setSize(w, h);
+            effectVR.setSize(w, h);
+            const aspect = w / h;
+
+            cameraLandscape.aspect = aspect; cameraLandscape.updateProjectionMatrix();
+            cameraPortrait.aspect = aspect; cameraPortrait.updateProjectionMatrix();
+
+            adjustCameraTarget();
+        }
+
+        function adjustCameraTarget() {
+            const aspect = window.innerWidth / window.innerHeight;
+            
+            if (aspect >= 1.0) { // Horizontal
+                activeCamera = cameraLandscape;
+                targetZ = CAM_LAND_DIST; 
+                targetY = CAM_LAND_Y;
+            } else { // Vertical
+                activeCamera = cameraPortrait;
+                targetZ = CAM_PORT_DIST; 
+                targetY = CAM_PORT_Y;
+            }
+
+            if (isVRMode) { targetZ = Z_VR; targetY = 0; }
+            else if (isZoomed) { targetZ = Z_ZOOM; targetY = 0; }
+        }
+
+        function spinMachine() {
+            if (machineIsSpinning || isButtonDisabled) return;
+            machineIsSpinning = true; isButtonDisabled = true; isZoomed = false;
+            adjustCameraTarget(); resetCoins();
+            resultText.classList.remove('show');
+            
+            if(buttonAction) { buttonAction.reset(); buttonAction.play(); }
+            isLightFlashing = true; setTimeout(() => isLightFlashing = false, 200);
+
+            reelStates.forEach(s => { s.mode = 'SPINNING'; s.velocity = 0; });
+            for (let i = 0; i < NUM_CARRETES; i++) setTimeout(() => {
+                const state = reelStates[i];
+                state.mode = 'STOPPING';
+                const currentRot = reels[i].rotation.x;
+                const nextRound = Math.ceil(currentRot / (Math.PI*2)) + 2 + i;
+                const randIndex = Math.floor(Math.random() * NUM_ITEMS_POR_RUEDA);
+                state.targetAngle = (nextRound * Math.PI * 2) + (randIndex * ANGLE_STEP);
+            }, 500 + (i * 200));
+        }
+
+        function checkResults() {
+             // 1. Calcular resultado
+             const results = reels.map(r => {
+                 let ang = r.rotation.x % (Math.PI*2);
+                 if(ang < 0) ang += Math.PI*2;
+                 return Math.round(ang / ANGLE_STEP) % NUM_ITEMS_POR_RUEDA;
+             });
+             
+             const names = results.map(i => NOMBRES_SIMBOLOS[(NUM_ITEMS_POR_RUEDA - i) % NUM_ITEMS_POR_RUEDA]);
+             resultText.innerText = names.join(" - ");
+             resultText.classList.add('show');
+
+             // 2. Verificar Premio
+             if(names[0] === names[1] && names[1] === names[2]) {
+                 // --- SECUENCIA DE VICTORIA CORREGIDA ---
+                 resultText.innerText += " ¡PREMIO!";
+                 isButtonDisabled = true; // Seguir bloqueado durante la celebración
+                 
+                 // A) Zoom IN
+                 isZoomed = true; 
+                 adjustCameraTarget();
+                 
+                 // B) Esperar 2 segundos viendo el premio
+                 setTimeout(() => {
+                     // C) Zoom OUT + Monedas
+                     isZoomed = false;
+                     adjustCameraTarget();
+                     spawnCoins();
+                     
+                     // D) Desbloquear botón después de que vuelen un poco
+                     setTimeout(() => {
+                         isButtonDisabled = false;
+                     }, 1500);
+                     
+                 }, 2000); 
+
+             } else {
+                 // Si no hay premio, desbloquear inmediatamente
+                 isButtonDisabled = false;
+             }
+        }
+
+        // =====================================================================
+        // 6. INPUT Y ANIMACIÓN
+        // =====================================================================
+        
+        function onPointerDown(e) {
+            if (e.target.tagName === 'BUTTON') return;
+            if (isButtonDisabled) return;
+
+            pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = - (e.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(pointer, activeCamera);
+
+            let hit = false;
+            
+            if (spinGroup) {
+                const intersects = raycaster.intersectObject(spinGroup, true);
+                if (intersects.length > 0) hit = true;
+            } 
+            if (!hit && structureGroup) {
+                const intersects = raycaster.intersectObject(structureGroup, true);
+                if (intersects.length > 0) hit = true;
+            }
+
+            if (hit) {
+                spinMachine();
+            }
         }
 
         function spawnCoins() {
-            for(let i=0; i < COIN_COUNT; i++) {
+             for(let i=0; i < COIN_COUNT; i++) {
                 const data = coinsData[i]; data.active = true;
                 data.position.set((Math.random() - 0.5) * COIN_SPREAD * 2, -8.0, 12.0 + (Math.random() * 4.0));
                 data.velocity.set((Math.random() - 0.5) * 10.0, COIN_BLAST_FORCE + (Math.random() * 10), (Math.random() - 0.5) * 5.0);
                 data.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
-                data.rotSpeed.set((Math.random() - 0.5) * 15, (Math.random() - 0.5) * 15, (Math.random() - 0.5) * 15);
             }
         }
 
         function resetCoins() {
             if (!coinInstancedMesh) return;
-            for(let i=0; i < COIN_COUNT; i++) { coinsData[i].active = false; dummy.position.set(0, -500, 0); dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
+            for(let i=0; i < COIN_COUNT; i++) { coinsData[i].active = false; dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
             coinInstancedMesh.instanceMatrix.needsUpdate = true;
         }
 
@@ -398,306 +472,67 @@
             for(let i=0; i < COIN_COUNT; i++) {
                 const data = coinsData[i];
                 if (data.active) {
-                    data.velocity.y -= COIN_GRAVITY * delta; data.position.addScaledVector(data.velocity, delta);
-                    data.rotation.x += data.rotSpeed.x * delta; data.rotation.y += data.rotSpeed.y * delta; data.rotation.z += data.rotSpeed.z * delta;
-                    dummy.position.copy(data.position); dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z); dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE); dummy.updateMatrix();
-                    coinInstancedMesh.setMatrixAt(i, dummy.matrix);
-                    if (data.position.y < -50) { data.active = false; dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); } else { activeCount++; }
-                }
-            }
-            if (activeCount > 0 || coinInstancedMesh.count > 0) coinInstancedMesh.instanceMatrix.needsUpdate = true;
-        }
-
-        function setupStructure(node) {
-            if (node.isMesh) {
-                node.castShadow = true; 
-                node.receiveShadow = false;
-                
-                if (node.name.toLowerCase().includes('cilindro')) {
-                    node.receiveShadow = true;
-                }
-
-                if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
-            }
-            
-            if (node.name.toLowerCase() === 'spin') {
-                spinGroup = node;
-                let childMeshes = [];
-                node.traverse((child) => {
-                    if (child.isMesh) {
-                        childMeshes.push(child);
-                        if (child.material) {
-                            child.material = child.material.clone();
-                            child.material.emissiveMap = null; 
-                            child.material.emissive = new THREE.Color(0x000000);
-                            child.material.emissiveIntensity = 0.5;
-                            child.userData.origColor = child.material.color.clone();
-                        }
-                    }
-                });
-                if (childMeshes.length > 0) {
-                    const arrow = childMeshes.find(m => m.name.toLowerCase().includes('arrow') || m.name.toLowerCase().includes('flecha'));
-                    if (arrow) { spinArrowMesh = arrow; spinButtonMesh = childMeshes.find(m => m !== arrow); } 
-                    else { spinArrowMesh = childMeshes[0]; spinButtonMesh = childMeshes.length > 1 ? childMeshes[1] : null; }
+                    data.velocity.y -= COIN_GRAVITY * delta; 
+                    data.position.addScaledVector(data.velocity, delta);
+                    data.rotation.x += 5 * delta; 
                     
-                    if (spinArrowMesh && spinArrowMesh.material) spinArrowMesh.material.emissive.set(params.arrColor);
-                    if (spinButtonMesh && spinButtonMesh.material) spinButtonMesh.material.emissive.set(params.btnColor);
+                    dummy.position.copy(data.position); 
+                    dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z); 
+                    dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE); 
+                    dummy.updateMatrix();
+                    coinInstancedMesh.setMatrixAt(i, dummy.matrix);
+                    
+                    if (data.position.y < -50) { 
+                        data.active = false; 
+                        dummy.scale.set(0,0,0); dummy.updateMatrix(); 
+                        coinInstancedMesh.setMatrixAt(i, dummy.matrix); 
+                    } else activeCount++;
                 }
             }
+            if (activeCount > 0) coinInstancedMesh.instanceMatrix.needsUpdate = true;
         }
-
-        function setupSymbol(node) {
-             if (node.isMesh) { 
-                 node.castShadow = true; 
-                 node.receiveShadow = false; 
-                 if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; 
-             }
-        }
-
-        function loadStructure() {
-            return new Promise((resolve, reject) => {
-                loader.load('cilindro.glb', (gltf) => {
-                    const model = gltf.scene;
-                    if (gltf.animations && gltf.animations.length > 0) {
-                        buttonMixer = new THREE.AnimationMixer(model);
-                        const clip = gltf.animations[0];
-                        buttonAction = buttonMixer.clipAction(clip);
-                        buttonAction.loop = THREE.LoopOnce; buttonAction.clampWhenFinished = true; buttonAction.play(); buttonAction.paused = true; buttonAction.time = 0;
-                    }
-                    model.traverse(setupStructure); scene.add(model); resolve();
-                }, undefined, reject);
-            });
-        }
-
-        function crearHilera(indicePosicion) {
-            const reelGroup = new THREE.Group();
-            const posX = (indicePosicion * SEPARACION_CARRETES) - ((NUM_CARRETES - 1) * SEPARACION_CARRETES / 2);
-            reelGroup.position.x = posX; scene.add(reelGroup); reels.push(reelGroup);
-            for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
-                const glbName = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
-                const rawModel = symbolMasters[glbName].clone();
-                const pivot = new THREE.Group();
-                pivot.rotation.x = (i * ANGLE_STEP);
-                rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS); 
-                rawModel.rotation.set(AJUSTE_ROTACION_X, 0, 0);
-                pivot.add(rawModel); 
-                reelGroup.add(pivot); 
-                rawModel.traverse(setupSymbol);
-            }
-        }
-
-        function spinMachine() {
-            if (machineIsSpinning || isButtonDisabled) return;
-            machineIsSpinning = true; isButtonDisabled = true; 
-            isZoomed = false; adjustCameraTarget(); resetCoins();
-            resultText.classList.remove('show'); resultText.style.borderColor = "#ffd700"; resultText.style.color = "#fff";
-            
-            reelStates.forEach((state) => { state.mode = 'SPINNING'; state.velocity = 0; });
-            for (let i = 0; i < NUM_CARRETES; i++) setTimeout(() => triggerStop(i), SPIN_DURATION_MS + (i * STOP_DELAY_MS));
-        }
-
-        window.addEventListener('click', (e) => {
-            if (e.target === exitFsBtn || e.target === enterFsBtn) return;
-            if (e.target === camSlider) return; 
-
-            if (isVRMode && e.target !== vrButton && !e.target.closest('.panel') && !e.target.closest('#slider-container')) {
-                if(!isButtonDisabled) { triggerButtonAnimation(); spinMachine(); }
-            }
-        });
-
-        function triggerStop(reelIndex) {
-            const state = reelStates[reelIndex]; state.mode = 'STOPPING';
-            const currentRotation = reels[reelIndex].rotation.x;
-            const fullCircle = Math.PI * 2;
-            const nextSafeRound = Math.ceil(currentRotation / fullCircle);
-            const targetRounds = nextSafeRound + 2 + reelIndex; 
-            
-            const randomIndex = Math.floor(Math.random() * NUM_ITEMS_POR_RUEDA);
-            const angleOffset = randomIndex * ANGLE_STEP;
-            
-            state.targetAngle = (targetRounds * fullCircle) + angleOffset;
-        }
-
-        function checkResults() {
-             const resultados = [];
-            reels.forEach((reel) => {
-                let angle = reel.rotation.x % (Math.PI * 2);
-                if (angle < 0) angle += Math.PI * 2;
-                const steps = Math.round(angle / ANGLE_STEP);
-                const index = (NUM_ITEMS_POR_RUEDA - (steps % NUM_ITEMS_POR_RUEDA)) % NUM_ITEMS_POR_RUEDA;
-                resultados.push(NOMBRES_SIMBOLOS[index]);
-            });
-            
-            resultText.innerText = resultados.join(" - "); 
-            resultText.classList.add('show');
-            
-            if (resultados[0] === resultados[1] && resultados[1] === resultados[2]) {
-                resultText.style.borderColor = "#00ff00"; resultText.style.color = "#00ff00"; resultText.innerText += " ¡PREMIO!";
-                isZoomed = true; adjustCameraTarget();
-                setTimeout(() => { 
-                    isZoomed = false; adjustCameraTarget(); 
-                    setTimeout(() => { 
-                        spawnCoins(); 
-                        setTimeout(() => { isButtonDisabled = false; }, 3000); 
-                    }, 800); 
-                }, 1500);
-            } else { 
-                isButtonDisabled = false; 
-            }
-        }
-
-        vrButton.addEventListener('click', () => {
-            isVRMode = !isVRMode;
-            if (isVRMode) { 
-                uiElements.forEach(el => el.classList.add('hidden-in-vr')); 
-                if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); 
-                camSlider.value = zVR; 
-            } else { 
-                uiElements.forEach(el => el.classList.remove('hidden-in-vr')); 
-                if (document.exitFullscreen) document.exitFullscreen(); 
-                camSlider.value = zNormal; 
-            }
-            adjustCameraTarget();
-        });
 
         function animate() {
             requestAnimationFrame(animate);
-            
-            let delta = clock.getDelta();
-            delta = Math.min(delta, 0.1); 
-            const timeScale = delta * 60; 
+            const delta = Math.min(clock.getDelta(), 0.1);
+            const timeScale = delta * 60;
 
-            updateCoins(delta); 
-            
-            let isHovering = false;
-            if (spinGroup && !isVRMode && !isButtonDisabled) {
-                raycaster.setFromCamera(pointer, camera);
-                const intersects = raycaster.intersectObject(spinGroup, true);
-                if (intersects.length > 0) isHovering = true;
-            }
+            if(buttonMixer) buttonMixer.update(delta);
+            updateCoins(delta);
 
-            if (isHovering && !isButtonDisabled) document.body.style.cursor = 'pointer'; else document.body.style.cursor = 'default';
-
-            if (pointLight) {
-                if (isLightFlashing) {
-                    pointLight.intensity = params.lClkInt; pointLight.distance = params.lClkDist; pointLight.color.set(params.lClkColor);
-                } else if (isButtonDisabled) {
-                    pointLight.intensity = 0;
-                } else if (isHovering) {
-                    pointLight.intensity = params.lHovInt; pointLight.distance = params.lHovDist; pointLight.color.set(params.lHovColor);
-                } else {
-                    pointLight.intensity = 0; 
-                }
-            }
-
-            let targetIntBtn, targetIntArr;
-            if (isButtonDisabled) {
-                targetIntBtn = 0.0; targetIntArr = 0.0;
-                if (spinButtonMesh && spinButtonMesh.material) spinButtonMesh.material.color.setHex(0x333333);
-                if (spinArrowMesh && spinArrowMesh.material) spinArrowMesh.material.color.setHex(0x333333);
-            } else {
-                if (spinButtonMesh && spinButtonMesh.material && spinButtonMesh.userData.origColor) spinButtonMesh.material.color.copy(spinButtonMesh.userData.origColor);
-                if (spinArrowMesh && spinArrowMesh.material && spinArrowMesh.userData.origColor) spinArrowMesh.material.color.copy(spinArrowMesh.userData.origColor);
-                if (isHovering) { targetIntBtn = params.btnHover; targetIntArr = params.arrHover; } 
-                else { targetIntBtn = params.btnIdle; targetIntArr = params.arrIdle; }
-            }
-
-            if (spinButtonMesh && spinButtonMesh.material) {
-                spinButtonMesh.material.emissiveIntensity += (targetIntBtn - spinButtonMesh.material.emissiveIntensity) * 0.15 * timeScale;
-                spinButtonMesh.material.emissive.lerp(new THREE.Color(params.btnColor), 0.2 * timeScale);
-            }
-            if (spinArrowMesh && spinArrowMesh.material) {
-                spinArrowMesh.material.emissiveIntensity += (targetIntArr - spinArrowMesh.material.emissiveIntensity) * 0.15 * timeScale;
-                spinArrowMesh.material.emissive.lerp(new THREE.Color(params.arrColor), 0.2 * timeScale);
-            }
-
-            if (buttonMixer && buttonAction) {
-                if (isButtonAnimating) {
-                    buttonMixer.update(delta);
-                    if (buttonAction.time >= TIME_ClickEnd) { buttonAction.paused = true; buttonAction.time = TIME_ClickEnd; isButtonAnimating = false; }
-                } else {
-                    if (isHovering && !isButtonDisabled) { buttonAction.paused = true; buttonAction.time = TIME_Hover; buttonMixer.update(0); } 
-                    else { buttonAction.paused = true; buttonAction.time = 0; buttonMixer.update(0); }
-                }
-            }
-
-            if (!isVRMode) {
-                camera.position.z += (targetZ - camera.position.z) * 0.05 * timeScale;
-                camera.position.y += (targetY - camera.position.y) * 0.05 * timeScale; 
-            } else {
-                camera.position.z = zVR; 
-                camera.position.y = 0; 
-            }
-
-            let allReelsIdle = true;
-            reels.forEach((reel, i) => {
-                if (!reel) return;
-                const state = reelStates[i];
-                if (state.mode === 'SPINNING') {
-                    allReelsIdle = false; 
-                    if (state.velocity < MAX_SPEED) state.velocity += 0.02 * timeScale; 
-                    reel.rotation.x += state.velocity * timeScale;
-                } else if (state.mode === 'STOPPING') {
-                    allReelsIdle = false;
-                    const displacement = state.targetAngle - reel.rotation.x;
-                    state.velocity += displacement * SPRING_TENSION * timeScale;
-                    const dampingFactor = Math.pow(SPRING_DAMPING, timeScale);
-                    state.velocity *= dampingFactor;
-                    reel.rotation.x += state.velocity * timeScale;
-                    if (Math.abs(displacement) < 0.005 && Math.abs(state.velocity) < 0.005) { reel.rotation.x = state.targetAngle; state.mode = 'IDLE'; state.velocity = 0; }
+            let allIdle = true;
+            reels.forEach((r, i) => {
+                const s = reelStates[i];
+                if(s.mode === 'SPINNING') {
+                    allIdle = false;
+                    if(s.velocity < 0.5) s.velocity += 0.02 * timeScale;
+                    r.rotation.x += s.velocity * timeScale;
+                } else if(s.mode === 'STOPPING') {
+                    allIdle = false;
+                    const diff = s.targetAngle - r.rotation.x;
+                    s.velocity += diff * 0.25 * timeScale;
+                    s.velocity *= Math.pow(0.80, timeScale);
+                    r.rotation.x += s.velocity * timeScale;
+                    if(Math.abs(diff) < 0.005 && Math.abs(s.velocity) < 0.005) {
+                        r.rotation.x = s.targetAngle;
+                        s.mode = 'IDLE';
+                    }
                 }
             });
 
-            if (allReelsIdle && machineIsSpinning) { machineIsSpinning = false; checkResults(); }
+            if(allIdle && machineIsSpinning) { machineIsSpinning = false; checkResults(); }
 
-            // === RENDERIZADO DIRECTO (Sin Composer) ===
-            if (isVRMode) {
-                effectVR.render(scene, camera);
-            } else {
-                renderer.render(scene, camera); 
+            if(pointLight) {
+                if(isLightFlashing) { pointLight.intensity = 576; pointLight.distance = 134; }
+                else pointLight.intensity = 0; 
             }
+
+            activeCamera.position.z += (targetZ - activeCamera.position.z) * 0.05 * timeScale;
+            activeCamera.position.y += (targetY - activeCamera.position.y) * 0.05 * timeScale;
+
+            if(isVRMode) effectVR.render(scene, activeCamera);
+            else renderer.render(scene, activeCamera);
         }
-
-        function adjustCameraTarget() {
-            const width = window.innerWidth; const height = window.innerHeight; const aspect = width / height;
-            let idealZ = zNormal; 
-            if (isVRMode) { idealZ = zVR; } else if (isZoomed) { idealZ = Z_ZOOM; }
-            if (aspect < 1.0 && !isVRMode) { targetZ = idealZ / (aspect * 1.35); targetY = -5.0; } else { targetZ = idealZ; targetY = 0.0; }
-        }
-
-        exitFsBtn.addEventListener('click', () => {
-            if (document.exitFullscreen) document.exitFullscreen();
-            else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); 
-        });
-
-        enterFsBtn.addEventListener('click', () => {
-            const docEl = document.documentElement;
-            if (docEl.requestFullscreen) docEl.requestFullscreen();
-            else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen(); 
-            landscapeOverlay.style.display = 'none';
-        });
-
-        function checkOrientation() {
-            if (!isMobile) return;
-            const isLandscape = window.innerWidth > window.innerHeight;
-            const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
-            if (isLandscape && !isFullscreen) { landscapeOverlay.style.display = 'flex'; } else { landscapeOverlay.style.display = 'none'; }
-        }
-
-        function onWindowResize() {
-            const width = window.innerWidth; const height = window.innerHeight;
-            renderer.setSize(width, height); 
-            effectVR.setSize(width, height); 
-            const aspect = width / height; camera.aspect = aspect; camera.updateProjectionMatrix(); adjustCameraTarget();
-        }
-
-        window.addEventListener('resize', () => { onWindowResize(); checkOrientation(); });
-        document.addEventListener('fullscreenchange', checkOrientation);
-        document.addEventListener('webkitfullscreenchange', checkOrientation);
-        window.addEventListener('orientationchange', () => setTimeout(() => { onWindowResize(); checkOrientation(); }, 100));
-        
-        onWindowResize();
-        init();
     </script>
 </body>
 </html>

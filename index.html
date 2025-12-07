@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Test Sombras Móvil</title>
+    <title>Slot Pro: Cilindro GLB Simplificado</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -187,7 +187,7 @@
         
         // --- OPTIMIZACIÓN BASADA EN DISPOSITIVO ---
         const COIN_COUNT = isMobile ? 50 : 150; 
-        const SHADOW_MAP_SIZE = isMobile ? 512 : 2048; // 512 for mobile to limit cost
+        const SHADOW_MAP_SIZE = isMobile ? 512 : 2048; // 512 para móvil
         const RENDERER_ANTIALIAS = !isMobile; 
         const ENABLE_BLOOM = !isMobile; 
 
@@ -287,8 +287,7 @@
         const sunLight = new THREE.DirectionalLight(params.sunColor, params.sunInt); 
         sunLight.position.set(-10, 30, 20); 
         
-        // --- CAMBIO CLAVE: FORZAR SOMBRAS (castShadow = true) ---
-        // Las sombras se activan siempre para el test móvil/Shadow Catcher.
+        // --- FORZAR SOMBRAS: TRUE en móvil y escritorio ---
         sunLight.castShadow = true; 
         
         const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
@@ -312,33 +311,8 @@
         }
         fillLight.castShadow = false; 
         
-
-        // --- SHADOW CATCHER (CILINDRO SIMPLE) ---
-        // Usado para capturar sombras sobre el rodillo GLB con geometría simple para el cálculo.
-        if (sunLight.castShadow) {
-            const catcherRadius = 8.0; 
-            const catcherHeight = 15.0; 
-            const catcherGeometry = new THREE.CylinderGeometry(catcherRadius, catcherRadius, catcherHeight, 12, 1);
-            
-            // Material semitransparente, oscuro, que solo recibe sombras
-            const catcherMaterial = new THREE.MeshStandardMaterial({ 
-                color: 0x050505, // Oscuro para que la sombra se vea mejor
-                transparent: true, 
-                opacity: 0.5,
-                depthWrite: false 
-            }); 
-            
-            const shadowCatcher = new THREE.Mesh(catcherGeometry, catcherMaterial);
-            shadowCatcher.rotation.x = Math.PI / 2; 
-            shadowCatcher.position.set(0, 0, 0); 
-            
-            shadowCatcher.receiveShadow = true;
-            shadowCatcher.visible = true;
-            
-            scene.add(shadowCatcher);
-        }
-        // --- FIN: SHADOW CATCHER ---
-
+        // --- ELIMINAR EL SHADOW CATCHER VIRTUAL (Cilindro de baja poli) ---
+        // Se elimina el código que creaba el Shadow Catcher de baja geometría aquí.
 
         pointLight = new THREE.PointLight(0xffaa00, 0, 100);
         pointLight.position.set(0, -5, 12); 
@@ -514,11 +488,19 @@
 
         function setupStructure(node) {
             if (node.isMesh) {
-                // El cuerpo GLB de la máquina PROYECTARÁ sombra (si sunLight.castShadow es true)
+                // Todas las partes de la estructura proyectan sombra
                 node.castShadow = sunLight.castShadow; 
-                // El cuerpo GLB de la máquina NO recibirá sombras, el Shadow Catcher invisible lo hará
+                // Ninguna parte de la estructura (excepto el Cilindro simplificado, manejado abajo) recibe sombra
                 node.receiveShadow = false; 
                 if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
+
+                // --- CAMBIO CLAVE: CILINDRO SIMPLIFICADO RECIBE SOMBRAS ---
+                if (node.name === 'Cilindro') {
+                    // El objeto con la geometría simplificada es el único que recibe sombras.
+                    node.receiveShadow = sunLight.castShadow; 
+                    // Opcional: Aseguramos que solo proyecte si la luz solar está activada
+                    node.castShadow = sunLight.castShadow;
+                }
             }
             if (node.name.toLowerCase() === 'spin') {
                 spinGroup = node;

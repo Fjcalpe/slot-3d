@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Delta Time Optimized</title>
+    <title>Slot Pro: Turbo & Luces Clásicas</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         
@@ -44,7 +44,6 @@
             align-items: center; justify-content: center;
         }
 
-        /* --- SLIDER CAMARA --- */
         #slider-container {
             position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
             z-index: 40; width: 200px; text-align: center;
@@ -54,11 +53,8 @@
         #slider-container label {
             display: block; color: #ffd700; font-size: 12px; margin-bottom: 5px; font-weight: bold; text-transform: uppercase;
         }
-        #cam-slider {
-            width: 100%; cursor: pointer;
-        }
+        #cam-slider { width: 100%; cursor: pointer; }
 
-        /* --- ESTILOS DE PANELES (Ocultos) --- */
         .panel {
             position: absolute; top: 10px;
             width: 270px; max-height: 90vh; overflow-y: auto;
@@ -69,26 +65,23 @@
         }
         .hidden-in-vr { opacity: 0 !important; pointer-events: none !important; }
         
-        /* Scrollbar */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #222; }
         ::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
 
-        /* --- ESTILOS PARA PANTALLA COMPLETA --- */
         #exit-fs-btn {
             position: absolute; bottom: 20px; right: 20px; z-index: 150;
             background: rgba(200, 0, 0, 0.8); color: #fff; border: 1px solid #fff;
             padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;
-            display: none; /* Oculto por defecto */
+            display: none; 
             text-transform: uppercase; font-size: 12px; letter-spacing: 1px;
         }
-        /* Mostrar botón EXIT solo en fullscreen */
         :fullscreen #exit-fs-btn, :-webkit-full-screen #exit-fs-btn { display: block; }
 
         #landscape-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.95); z-index: 200;
-            display: none; /* Oculto por defecto */
+            display: none; 
             align-items: center; justify-content: center; flex-direction: column;
             color: #ffd700; text-align: center; padding: 20px; box-sizing: border-box;
         }
@@ -98,16 +91,12 @@
               font-size: 1.1rem; font-weight: bold; border-radius: 8px; cursor: pointer;
               text-transform: uppercase; box-shadow: 0 0 15px #ffd700;
         }
-        
-        /* Debug info para verificar FPS en móvil si quieres (opcional) */
-        #fps-counter {
-            position: absolute; top: 5px; left: 5px; color: lime; font-family: monospace; font-size: 10px; z-index: 300; pointer-events: none;
-        }
     </style>
 </head>
 <body>
 
     <div id="loading">Cargando Recursos...</div>
+    
     <div id="result-panel" class="ui-element">
         <div id="result-text">LISTO</div>
     </div>
@@ -118,7 +107,6 @@
     </div>
 
     <button id="vr-btn" title="Modo VR">👓</button>
-
     <button id="exit-fs-btn">EXIT FULLSCREEN</button>
 
     <div id="landscape-overlay">
@@ -145,42 +133,42 @@
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'; 
         import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
         import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-        import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
         // =====================================================================
         // PARÁMETROS GLOBALES
         // =====================================================================
         const params = {
-            // Bloom
             bloomThreshold: 1.29, bloomStrength: 0.2, bloomRadius: 0.06,
-            // Botón
             btnColor: "#ffffff", btnIdle: 0.0, btnHover: 0.7, btnClick: 20.8,
-            // Flecha
             arrColor: "#fff68f", arrIdle: 0.2, arrHover: 0.6, arrClick: 14.8,
-            // Luz Sol
+            
+            // --- LUCES CLÁSICAS (COPIADAS DEL CÓDIGO VIEJO) ---
+            lHovColor: "#ffaa00", lHovInt: 200, lHovDist: 22,
+            lClkColor: "#ffe6aa", lClkInt: 576, lClkDist: 134,
             sunColor: "#fffee0", sunInt: 3.0,
+            ambColor: "#ffffff", ambInt: 0.6,
+            fillColor: "#fffee0", fillInt: 2.0
         };
 
-        // =====================================================================
-        // CONFIGURACIÓN THREE.JS
-        // =====================================================================
-        
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
-        const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena'];
+        const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku']; 
         
         const AJUSTE_ROTACION_X = 0; 
         const NUM_CARRETES = 3; 
         const SEPARACION_CARRETES = 4.5; 
-        const NUM_ITEMS_POR_RUEDA = 6; 
+        const NUM_ITEMS_POR_RUEDA = 8; 
         const RADIO_ORBITA_SIMBOLOS = 6.0; 
         const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
         
-        // FISICA Y TIEMPO
-        const MAX_SPEED = 0.50; // Velocidad máxima por frame (Referencia 60fps)
-        const SPIN_DURATION_MS = 1000; 
-        const STOP_DELAY_MS = 300; 
-        const SPRING_TENSION = 0.08; 
-        const SPRING_DAMPING = 0.85; 
+        // --- CONFIGURACIÓN DE TIEMPO Y FÍSICA (TURBO) ---
+        const MAX_SPEED = 0.50; 
+        // TIEMPOS REDUCIDOS A LA MITAD:
+        const SPIN_DURATION_MS = 500;  // Antes 1000
+        const STOP_DELAY_MS = 150;     // Antes 300
+        
+        // REBOTE MÁS RÁPIDO (MUELLE MÁS TENSO):
+        const SPRING_TENSION = 0.25;   // Antes 0.08 (Más alto = vuelve más rápido)
+        const SPRING_DAMPING = 0.80;   // Antes 0.85 (Más bajo = frena antes)
         
         let zNormal = 22; 
         const Z_ZOOM = 14; 
@@ -188,11 +176,10 @@
         
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
-        // --- OPTIMIZACIÓN UNIFICADA (MOBILE FIRST) ---
-        const COIN_COUNT = 60; 
-        const SHADOW_MAP_SIZE = 1024; 
+        const COIN_COUNT = 150; 
+        const SHADOW_MAP_SIZE = 2048; 
         const RENDERER_ANTIALIAS = false; 
-        const ENABLE_BLOOM = false; 
+        const ENABLE_BLOOM = true; 
 
         const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8; 
 
@@ -225,11 +212,9 @@
         const uiElements = document.querySelectorAll('.ui-element');
         const camSlider = document.getElementById('cam-slider');
 
-        // Variables Fullscreen
         const exitFsBtn = document.getElementById('exit-fs-btn');
         const landscapeOverlay = document.getElementById('landscape-overlay');
         const enterFsBtn = document.getElementById('enter-fs-btn');
-
 
         const reelStates = Array(NUM_CARRETES).fill(null).map(() => ({ mode: 'IDLE', velocity: 0, targetAngle: 0 }));
         const symbolMasters = {};
@@ -252,7 +237,7 @@
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         
         renderer.toneMapping = THREE.NoToneMapping; 
-        
+
         document.body.appendChild(renderer.domElement);
 
         const effectVR = new StereoEffect(renderer);
@@ -263,12 +248,11 @@
         const renderPass = new RenderPass(scene, camera);
         composer.addPass(renderPass);
         
-        let bloomPass;
         if (ENABLE_BLOOM) { 
             try {
-                bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), params.bloomStrength, params.bloomRadius, params.bloomThreshold);
+                const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), params.bloomStrength, params.bloomRadius, params.bloomThreshold);
                 composer.addPass(bloomPass);
-            } catch (e) { console.warn("Error creating BloomPass:", e); }
+            } catch (e) {}
         }
 
         const fxaaPass = new ShaderPass(FXAAShader);
@@ -283,21 +267,41 @@
         let isVRMode = false;
 
         // =====================================================================
-        // SETUP LUCES (SOLO SOL)
+        // RECONSTRUCCIÓN EXACTA DE LUCES (CÓDIGO VIEJO)
         // =====================================================================
 
-        const sunLight = new THREE.DirectionalLight(params.sunColor, params.sunInt); 
-        sunLight.position.set(-10, 30, 20); 
-        
-        // --- SOMBRAS ACTIVAS ---
-        sunLight.castShadow = true; 
-        
-        const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-        sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); 
-        sunLight.shadow.bias = -0.0005; 
-        sunLight.shadow.radius = 2; 
-        
-        scene.add(sunLight);
+        function createLights() {
+            // 1. AMBIENTAL
+            const ambientLight = new THREE.AmbientLight(params.ambColor, params.ambInt); 
+            scene.add(ambientLight);
+
+            // 2. SOL
+            const sunLight = new THREE.DirectionalLight(params.sunColor, params.sunInt); 
+            sunLight.position.set(-10, 30, 20); 
+            sunLight.castShadow = true;
+            const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+            sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); 
+            sunLight.shadow.bias = -0.0005; 
+            sunLight.shadow.radius = 2; 
+            scene.add(sunLight);
+
+            // 3. RELLENO (Con PIVOT)
+            const fillPivot = new THREE.Object3D();
+            fillPivot.rotation.set(-3.06, -1.36, -2.31); 
+            scene.add(fillPivot);
+
+            const fillLight = new THREE.DirectionalLight(params.fillColor, params.fillInt);
+            fillLight.position.set(-8.10, -4.57, -7.28); 
+            fillPivot.add(fillLight); 
+
+            // 4. PUNTO (Flash)
+            pointLight = new THREE.PointLight(0xffaa00, 0, 100);
+            pointLight.position.set(0, -5, 12); 
+            pointLight.castShadow = false;
+            scene.add(pointLight);
+        }
+
+        createLights();
 
         const loader = new GLTFLoader();
         const textureLoader = new THREE.TextureLoader();
@@ -307,8 +311,6 @@
         // =====================================================================
         // INTERACCIÓN
         // =====================================================================
-        
-        // --- EVENTO SLIDER ---
         camSlider.addEventListener('input', (e) => {
             zNormal = parseFloat(e.target.value);
             adjustCameraTarget();
@@ -339,8 +341,10 @@
                 if (intersects.length > 0) {
                     if(spinButtonMesh) { spinButtonMesh.material.emissive.set(params.btnColor); spinButtonMesh.material.emissiveIntensity = params.btnClick; }
                     if(spinArrowMesh) { spinArrowMesh.material.emissive.set(params.arrColor); spinArrowMesh.material.emissiveIntensity = params.arrClick; }
+                    
                     isLightFlashing = true; 
                     setTimeout(() => isLightFlashing = false, 200);
+                    
                     triggerButtonAnimation();
                     spinMachine();
                 }
@@ -370,7 +374,6 @@
                 loadingText.style.opacity = 0;
                 
                 checkOrientation();
-                
                 animate();
             } catch (error) { loadingText.innerText = "Error (Ver consola)"; console.error(error); }
         }
@@ -382,13 +385,15 @@
                     gltf.scene.traverse((node) => { if (node.isMesh) { coinGeometry = node.geometry; coinMaterial = node.material; } });
                     if (coinGeometry && coinMaterial) {
                         if (coinMaterial.map) coinMaterial.map.colorSpace = THREE.SRGBColorSpace;
+                        
                         coinMaterial.emissive = new THREE.Color(0xffaa00); 
+                        coinMaterial.emissiveIntensity = 0.0; 
                         coinMaterial.metalness = 1.0; 
                         coinMaterial.roughness = 0.3;
 
                         coinInstancedMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, COIN_COUNT);
-                        coinInstancedMesh.castShadow = sunLight.castShadow; 
-                        coinInstancedMesh.receiveShadow = sunLight.castShadow; 
+                        coinInstancedMesh.castShadow = true; 
+                        coinInstancedMesh.receiveShadow = true; 
                         coinInstancedMesh.frustumCulled = false; 
                         for (let i = 0; i < COIN_COUNT; i++) { dummy.position.set(0, -500, 0); dummy.scale.set(0, 0, 0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
                         coinInstancedMesh.instanceMatrix.needsUpdate = true; scene.add(coinInstancedMesh);
@@ -438,13 +443,9 @@
 
         function setupStructure(node) {
             if (node.isMesh) {
-                node.castShadow = sunLight.castShadow; 
-                node.receiveShadow = false; 
+                node.castShadow = true; 
+                node.receiveShadow = true;
                 if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
-                if (node.name === 'Cilindro' || node.name === 'cilindro') {
-                    node.receiveShadow = true; 
-                    node.castShadow = true;
-                }
             }
             if (node.name.toLowerCase() === 'spin') {
                 spinGroup = node;
@@ -473,7 +474,7 @@
         }
 
         function setupSymbol(node) {
-             if (node.isMesh) { node.castShadow = sunLight.castShadow; node.receiveShadow = false; if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; }
+             if (node.isMesh) { node.castShadow = true; node.receiveShadow = false; if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; }
         }
 
         function loadStructure() {
@@ -497,14 +498,11 @@
             reelGroup.position.x = posX; scene.add(reelGroup); reels.push(reelGroup);
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
                 const glbName = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
-                
                 const rawModel = symbolMasters[glbName].clone();
-                
                 const pivot = new THREE.Group();
                 pivot.rotation.x = (i * ANGLE_STEP);
                 rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS); 
                 rawModel.rotation.set(AJUSTE_ROTACION_X, 0, 0);
-                
                 pivot.add(rawModel); 
                 reelGroup.add(pivot); 
                 rawModel.traverse(setupSymbol);
@@ -536,7 +534,6 @@
             const nextSafeRound = Math.ceil(currentRotation / fullCircle);
             const targetRounds = nextSafeRound + 2 + reelIndex; 
             
-            // ALEATORIEDAD REAL
             const randomIndex = Math.floor(Math.random() * NUM_ITEMS_POR_RUEDA);
             const angleOffset = randomIndex * ANGLE_STEP;
             
@@ -556,7 +553,6 @@
             resultText.innerText = resultados.join(" - "); 
             resultText.classList.add('show');
             
-            // VERIFICAR PREMIO (3 IGUALES)
             if (resultados[0] === resultados[1] && resultados[1] === resultados[2]) {
                 resultText.style.borderColor = "#00ff00"; resultText.style.color = "#00ff00"; resultText.innerText += " ¡PREMIO!";
                 isZoomed = true; adjustCameraTarget();
@@ -582,18 +578,14 @@
         function animate() {
             requestAnimationFrame(animate);
             
-            // --- DELTA TIME LOGIC START ---
+            // --- DELTA TIME LOGIC ---
             let delta = clock.getDelta();
-            
-            // Seguridad: Si el delta es enorme (lagazo o cambio de tab), lo capamos a 0.1s
             delta = Math.min(delta, 0.1); 
-            
-            // Factor de corrección: 1.0 = 60fps. >1 = menos fps.
             const timeScale = delta * 60; 
-            // --- DELTA TIME LOGIC END ---
 
-            updateCoins(delta); // Las monedas ya usaban lógica de segundos, pasamos delta normal
+            updateCoins(delta); 
             
+            // --- RAYCASTER ---
             let isHovering = false;
             if (spinGroup && !isVRMode && !isButtonDisabled) {
                 raycaster.setFromCamera(pointer, camera);
@@ -603,9 +595,24 @@
 
             if (isHovering && !isButtonDisabled) document.body.style.cursor = 'pointer'; else document.body.style.cursor = 'default';
 
-            // --- LÓGICA DE ESTADO VISUAL ---
+            // --- GESTIÓN DE LUCES (LÓGICA VIEJA RECUPERADA) ---
+            if (pointLight) {
+                if (isLightFlashing) {
+                    pointLight.intensity = params.lClkInt; 
+                    pointLight.distance = params.lClkDist; 
+                    pointLight.color.set(params.lClkColor);
+                } else if (isButtonDisabled) {
+                    pointLight.intensity = 0;
+                } else if (isHovering) {
+                    pointLight.intensity = params.lHovInt; 
+                    pointLight.distance = params.lHovDist; 
+                    pointLight.color.set(params.lHovColor);
+                } else {
+                    pointLight.intensity = 0; 
+                }
+            }
+
             let targetIntBtn, targetIntArr;
-            
             if (isButtonDisabled) {
                 targetIntBtn = 0.0; targetIntArr = 0.0;
                 if (spinButtonMesh) spinButtonMesh.material.color.setHex(0x333333);
@@ -613,11 +620,11 @@
             } else {
                 if (spinButtonMesh && spinButtonMesh.userData.origColor) spinButtonMesh.material.color.copy(spinButtonMesh.userData.origColor);
                 if (spinArrowMesh && spinArrowMesh.userData.origColor) spinArrowMesh.material.color.copy(spinArrowMesh.userData.origColor);
-
                 if (isHovering) { targetIntBtn = params.btnHover; targetIntArr = params.arrHover; } 
                 else { targetIntBtn = params.btnIdle; targetIntArr = params.arrIdle; }
             }
 
+            // Aplicamos Delta Time a la animación de materiales también
             if (spinButtonMesh) {
                 spinButtonMesh.material.emissiveIntensity += (targetIntBtn - spinButtonMesh.material.emissiveIntensity) * 0.15 * timeScale;
                 spinButtonMesh.material.emissive.lerp(new THREE.Color(params.btnColor), 0.2 * timeScale);
@@ -643,10 +650,6 @@
             reels.forEach((reel, i) => {
                 if (!reel) return;
                 const state = reelStates[i];
-                
-                // --- PHYSICS DELTA TIME CORRECTION ---
-                // Multiplicamos los incrementos por timeScale para igualar la velocidad a 60FPS
-                
                 if (state.mode === 'SPINNING') {
                     allReelsIdle = false; 
                     if (state.velocity < MAX_SPEED) state.velocity += 0.02 * timeScale; 
@@ -654,60 +657,42 @@
                 } else if (state.mode === 'STOPPING') {
                     allReelsIdle = false;
                     const displacement = state.targetAngle - reel.rotation.x;
-                    
-                    // El muelle debe ser consistente con el tiempo
                     state.velocity += displacement * SPRING_TENSION * timeScale;
-                    
-                    // Amortiguación corregida exponencialmente según el tiempo
                     const dampingFactor = Math.pow(SPRING_DAMPING, timeScale);
                     state.velocity *= dampingFactor;
-                    
                     reel.rotation.x += state.velocity * timeScale;
-                    
                     if (Math.abs(displacement) < 0.005 && Math.abs(state.velocity) < 0.005) { reel.rotation.x = state.targetAngle; state.mode = 'IDLE'; state.velocity = 0; }
                 }
             });
 
             if (allReelsIdle && machineIsSpinning) { machineIsSpinning = false; checkResults(); }
 
-            // Renderizar con VR o con el compositor (Post-processing)
             if (isVRMode) effectVR.render(scene, camera); else composer.render();
         }
 
-        // =====================================================================
-        // AJUSTE DE CÁMARA
-        // =====================================================================
         function adjustCameraTarget() {
             const width = window.innerWidth; const height = window.innerHeight; const aspect = width / height;
             let idealZ = zNormal; 
-            
             if (isVRMode) idealZ = Z_VR; else if (isZoomed) idealZ = Z_ZOOM;
-            
             if (aspect < 1.0 && !isVRMode) targetZ = idealZ / (aspect * 1.35); else targetZ = idealZ;
         }
 
-        // =====================================================================
-        // GESTIÓN DE PANTALLA COMPLETA Y ORIENTACIÓN
-        // =====================================================================
-        
         exitFsBtn.addEventListener('click', () => {
             if (document.exitFullscreen) document.exitFullscreen();
-            else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); // Safari
+            else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); 
         });
 
         enterFsBtn.addEventListener('click', () => {
             const docEl = document.documentElement;
             if (docEl.requestFullscreen) docEl.requestFullscreen();
-            else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen(); // Safari
+            else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen(); 
             landscapeOverlay.style.display = 'none';
         });
 
         function checkOrientation() {
             if (!isMobile) return;
-
             const isLandscape = window.innerWidth > window.innerHeight;
             const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
-
             if (isLandscape && !isFullscreen) {
                 landscapeOverlay.style.display = 'flex';
             } else {
@@ -723,18 +708,10 @@
             const aspect = width / height; camera.aspect = aspect; camera.updateProjectionMatrix(); adjustCameraTarget();
         }
 
-        window.addEventListener('resize', () => {
-            onWindowResize();
-            checkOrientation(); 
-        });
-        
+        window.addEventListener('resize', () => { onWindowResize(); checkOrientation(); });
         document.addEventListener('fullscreenchange', checkOrientation);
         document.addEventListener('webkitfullscreenchange', checkOrientation);
-        
-        window.addEventListener('orientationchange', () => setTimeout(() => {
-            onWindowResize();
-            checkOrientation();
-        }, 100));
+        window.addEventListener('orientationchange', () => setTimeout(() => { onWindowResize(); checkOrientation(); }, 100));
         
         onWindowResize();
         init();

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Sirena Performance Test</title>
+    <title>Slot Pro: Performance + Shadows</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         
@@ -44,7 +44,6 @@
             align-items: center; justify-content: center;
         }
 
-        /* Slider visible en VR (sin clase ui-element) */
         #slider-container {
             position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
             z-index: 40; width: 200px; text-align: center;
@@ -128,18 +127,11 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
-        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'; 
-        import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
-        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
         // =====================================================================
         // PARÁMETROS GLOBALES
         // =====================================================================
         const params = {
-            bloomThreshold: 1.29, bloomStrength: 0.2, bloomRadius: 0.06,
             btnColor: "#ffffff", btnIdle: 0.0, btnHover: 0.7, btnClick: 20.8,
             arrColor: "#fff68f", arrIdle: 0.2, arrHover: 0.6, arrClick: 14.8,
             
@@ -150,7 +142,6 @@
             ambColor: "#ffffff", ambInt: 0.6,
         };
 
-        // --- SOLO SIRENA PARA RENDIMIENTO ---
         const ARCHIVOS_GLB = ['sirena.glb']; 
         const NOMBRES_SIMBOLOS = ['Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena']; 
         
@@ -181,9 +172,9 @@
         const COIN_COUNT = 150; 
         const SHADOW_MAP_SIZE = 512; 
         
-        const RENDERER_ANTIALIAS = false; 
-        const ENABLE_BLOOM = false; // DESACTIVADO
-
+        // === OPTIMIZACIÓN RENDERER ===
+        const RENDERER_ANTIALIAS = false;
+        
         const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8; 
 
         const raycaster = new THREE.Raycaster();
@@ -231,12 +222,15 @@
         
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 150);
         
-        const renderer = new THREE.WebGLRenderer({ antialias: RENDERER_ANTIALIAS }); 
+        const renderer = new THREE.WebGLRenderer({ antialias: RENDERER_ANTIALIAS, powerPreference: "high-performance" }); 
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+        
+        // === OPTIMIZACIÓN: Forzar Pixel Ratio a 1 ===
+        renderer.setPixelRatio(1); 
         
         renderer.shadowMap.enabled = true; 
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
+        // === OPTIMIZACIÓN: BasicShadowMap (Rápido) pero con sombras activas ===
+        renderer.shadowMap.type = THREE.BasicShadowMap; 
         
         renderer.toneMapping = THREE.NoToneMapping; 
 
@@ -246,25 +240,7 @@
         effectVR.eyeSeparation = 0.005; 
         effectVR.setSize(window.innerWidth, window.innerHeight);
         
-        const composer = new EffectComposer(renderer);
-        const renderPass = new RenderPass(scene, camera);
-        composer.addPass(renderPass);
-        
-        if (ENABLE_BLOOM) { 
-            try {
-                const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), params.bloomStrength, params.bloomRadius, params.bloomThreshold);
-                composer.addPass(bloomPass);
-            } catch (e) {}
-        }
-
-        const fxaaPass = new ShaderPass(FXAAShader);
-        const pixelRatio = renderer.getPixelRatio();
-        fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio);
-        fxaaPass.material.uniforms['resolution'].value.y = 1 / (window.innerHeight * pixelRatio);
-        composer.addPass(fxaaPass);
-
-        const outputPass = new OutputPass();
-        composer.addPass(outputPass);
+        // --- ELIMINADO EFFECT COMPOSER (Render Directo) ---
 
         let isVRMode = false;
 
@@ -277,14 +253,13 @@
             const ambientLight = new THREE.AmbientLight(params.ambColor, params.ambInt); 
             scene.add(ambientLight);
 
-            // 2. Sol (Shadows 512)
+            // 2. Sol (Shadows)
             const sunLight = new THREE.DirectionalLight(params.sunColor, params.sunInt); 
             sunLight.position.set(-10, 30, 20); 
             sunLight.castShadow = true;
             const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
             sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); 
             sunLight.shadow.bias = -0.0005; 
-            sunLight.shadow.radius = 2; 
             scene.add(sunLight);
 
             // 3. Relleno con Pivot
@@ -313,14 +288,9 @@
         // INTERACCIÓN
         // =====================================================================
         
-        // Listener del Slider (Actualiza la variable correcta según modo)
         camSlider.addEventListener('input', (e) => {
             const val = parseFloat(e.target.value);
-            if (isVRMode) {
-                zVR = val; 
-            } else {
-                zNormal = val; 
-            }
+            if (isVRMode) { zVR = val; } else { zNormal = val; }
             adjustCameraTarget();
         });
 
@@ -333,16 +303,11 @@
         }
 
         function onPointerDown(event) {
-            if (isVRMode) {
-                pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-                pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
-            } else {
-                pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-                pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
-            }
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
             raycaster.setFromCamera(pointer, camera);
             
-            // Evitar disparo si se toca la UI
             if (event.target.closest('#slider-container')) return; 
             if (event.target === exitFsBtn || event.target === enterFsBtn) return;
             if (!isVRMode && event.target.closest('.panel')) return;
@@ -457,7 +422,6 @@
                 node.castShadow = true; 
                 node.receiveShadow = false;
                 
-                // Recibir sombras solo en cilindro
                 if (node.name.toLowerCase().includes('cilindro')) {
                     node.receiveShadow = true;
                 }
@@ -493,6 +457,7 @@
 
         function setupSymbol(node) {
              if (node.isMesh) { 
+                 // === SOMBRAS REACTIVADAS (Requisito explícito) ===
                  node.castShadow = true; 
                  node.receiveShadow = false; 
                  if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; 
@@ -596,11 +561,11 @@
             if (isVRMode) { 
                 uiElements.forEach(el => el.classList.add('hidden-in-vr')); 
                 if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); 
-                camSlider.value = zVR; // Sincroniza slider al valor VR
+                camSlider.value = zVR; 
             } else { 
                 uiElements.forEach(el => el.classList.remove('hidden-in-vr')); 
                 if (document.exitFullscreen) document.exitFullscreen(); 
-                camSlider.value = zNormal; // Sincroniza slider al valor Normal
+                camSlider.value = zNormal; 
             }
             adjustCameraTarget();
         });
@@ -608,14 +573,12 @@
         function animate() {
             requestAnimationFrame(animate);
             
-            // --- DELTA TIME LOGIC ---
             let delta = clock.getDelta();
             delta = Math.min(delta, 0.1); 
             const timeScale = delta * 60; 
 
             updateCoins(delta); 
             
-            // --- RAYCASTER ---
             let isHovering = false;
             if (spinGroup && !isVRMode && !isButtonDisabled) {
                 raycaster.setFromCamera(pointer, camera);
@@ -625,18 +588,13 @@
 
             if (isHovering && !isButtonDisabled) document.body.style.cursor = 'pointer'; else document.body.style.cursor = 'default';
 
-            // --- LUCES ---
             if (pointLight) {
                 if (isLightFlashing) {
-                    pointLight.intensity = params.lClkInt; 
-                    pointLight.distance = params.lClkDist; 
-                    pointLight.color.set(params.lClkColor);
+                    pointLight.intensity = params.lClkInt; pointLight.distance = params.lClkDist; pointLight.color.set(params.lClkColor);
                 } else if (isButtonDisabled) {
                     pointLight.intensity = 0;
                 } else if (isHovering) {
-                    pointLight.intensity = params.lHovInt; 
-                    pointLight.distance = params.lHovDist; 
-                    pointLight.color.set(params.lHovColor);
+                    pointLight.intensity = params.lHovInt; pointLight.distance = params.lHovDist; pointLight.color.set(params.lHovColor);
                 } else {
                     pointLight.intensity = 0; 
                 }
@@ -673,12 +631,11 @@
                 }
             }
 
-            // --- LÓGICA DE MOVIMIENTO DE CÁMARA (CORREGIDA) ---
             if (!isVRMode) {
                 camera.position.z += (targetZ - camera.position.z) * 0.05 * timeScale;
                 camera.position.y += (targetY - camera.position.y) * 0.05 * timeScale; 
             } else {
-                camera.position.z = zVR; // CORREGIDO: Usamos variable zVR (minúscula)
+                camera.position.z = zVR; 
                 camera.position.y = 0; 
             }
 
@@ -703,29 +660,19 @@
 
             if (allReelsIdle && machineIsSpinning) { machineIsSpinning = false; checkResults(); }
 
-            if (isVRMode) effectVR.render(scene, camera); else composer.render();
+            // === RENDERIZADO DIRECTO (Sin Composer) ===
+            if (isVRMode) {
+                effectVR.render(scene, camera);
+            } else {
+                renderer.render(scene, camera); 
+            }
         }
 
         function adjustCameraTarget() {
             const width = window.innerWidth; const height = window.innerHeight; const aspect = width / height;
             let idealZ = zNormal; 
-            
-            if (isVRMode) {
-                idealZ = zVR;
-            } else if (isZoomed) {
-                idealZ = Z_ZOOM;
-            }
-            
-            // --- AJUSTE VERTICAL ---
-            if (aspect < 1.0 && !isVRMode) {
-                // MODO VERTICAL (MÓVIL)
-                targetZ = idealZ / (aspect * 1.35); 
-                targetY = -5.0; // Bajar la cámara
-            } else {
-                // MODO HORIZONTAL (PC/VR)
-                targetZ = idealZ;
-                targetY = 0.0;
-            }
+            if (isVRMode) { idealZ = zVR; } else if (isZoomed) { idealZ = Z_ZOOM; }
+            if (aspect < 1.0 && !isVRMode) { targetZ = idealZ / (aspect * 1.35); targetY = -5.0; } else { targetZ = idealZ; targetY = 0.0; }
         }
 
         exitFsBtn.addEventListener('click', () => {
@@ -744,18 +691,13 @@
             if (!isMobile) return;
             const isLandscape = window.innerWidth > window.innerHeight;
             const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
-            if (isLandscape && !isFullscreen) {
-                landscapeOverlay.style.display = 'flex';
-            } else {
-                landscapeOverlay.style.display = 'none';
-            }
+            if (isLandscape && !isFullscreen) { landscapeOverlay.style.display = 'flex'; } else { landscapeOverlay.style.display = 'none'; }
         }
 
         function onWindowResize() {
             const width = window.innerWidth; const height = window.innerHeight;
-            renderer.setSize(width, height); effectVR.setSize(width, height); composer.setSize(width, height);
-            const pixelRatio = renderer.getPixelRatio();
-            fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio); fxaaPass.material.uniforms['resolution'].value.y = 1 / (window.innerHeight * pixelRatio);
+            renderer.setSize(width, height); 
+            effectVR.setSize(width, height); 
             const aspect = width / height; camera.aspect = aspect; camera.updateProjectionMatrix(); adjustCameraTarget();
         }
 

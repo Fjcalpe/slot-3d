@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Sirena Perf Test</title>
+    <title>Slot Pro: Test Geometría</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -60,7 +60,7 @@
         ::-webkit-scrollbar-track { background: #222; }
         ::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
 
-        /* --- NUEVOS ESTILOS PARA PANTALLA COMPLETA --- */
+        /* --- ESTILOS PARA PANTALLA COMPLETA --- */
         #exit-fs-btn {
             position: absolute; bottom: 20px; right: 20px; z-index: 150;
             background: rgba(200, 0, 0, 0.8); color: #fff; border: 1px solid #fff;
@@ -68,7 +68,7 @@
             display: none; /* Oculto por defecto */
             text-transform: uppercase; font-size: 12px; letter-spacing: 1px;
         }
-        /* CSS Magic: Mostrar el botón EXIT SOLO cuando el navegador está en modo pantalla completa */
+        /* Mostrar botón EXIT solo en fullscreen */
         :fullscreen #exit-fs-btn, :-webkit-full-screen #exit-fs-btn { display: block; }
 
         #landscape-overlay {
@@ -88,7 +88,7 @@
 </head>
 <body>
 
-    <div id="loading">Cargando Recursos (Solo Sirena)...</div>
+    <div id="loading">Cargando Recursos...</div>
     
     <div id="result-panel" class="ui-element">
         <div id="result-text">LISTO</div>
@@ -160,15 +160,18 @@
         // CONFIGURACIÓN THREE.JS
         // =====================================================================
         
-        // --- CAMBIO PARA TEST DE RENDIMIENTO (SOLO SIRENA) ---
-        const ARCHIVOS_GLB = ['sirena.glb']; // Solo usamos este
-        // Rellenamos el array de nombres con "Sirena" para las 8 posiciones
-        const NOMBRES_SIMBOLOS = Array(8).fill('Sirena'); 
+        // --- ARCHIVOS GLB ORIGINALES (COMENTADOS para probar geometría) ---
+        // const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
+        // const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
+        
+        // --- NUEVOS PARÁMETROS PARA GEOMETRÍA ---
+        const GEOMETRIAS = ['Box', 'Tetrahedron', 'Octahedron', 'Icosahedron', 'Dodecahedron', 'Torus'];
+        const NOMBRES_SIMBOLOS = GEOMETRIAS.map(g => g.substring(0, 3)); // Cub, Tet, Oct, etc.
         
         const AJUSTE_ROTACION_X = 0; 
-        const NUM_CARRETES = 3;        
+        const NUM_CARRETES = 3; 
         const SEPARACION_CARRETES = 4.5; 
-        const NUM_ITEMS_POR_RUEDA = 8; 
+        const NUM_ITEMS_POR_RUEDA = 6; // Reducido a 6 para un carril más corto y rápido
         const RADIO_ORBITA_SIMBOLOS = 6.0; 
         const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
         const MAX_SPEED = 0.50; 
@@ -177,24 +180,31 @@
         const SPRING_TENSION = 0.08; 
         const SPRING_DAMPING = 0.85; 
         
-        // --- CAMBIO DE CÁMARA (ZOOM IN DESKTOP) ---
-        // Se ha reducido Z_NORMAL de 28 a 22, y Z_ZOOM de 18 a 14
-        const Z_NORMAL = 22; const Z_ZOOM = 14; const Z_VR = 42;        
+        // --- CÁMARA (ZOOM IN MANTENIDO) ---
+        const Z_NORMAL = 22; const Z_ZOOM = 14; const Z_VR = 42; 
         
-        const COIN_COUNT = 150; const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8; 
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        // --- OPTIMIZACIÓN BASADA EN DISPOSITIVO ---
+        const COIN_COUNT = isMobile ? 50 : 150; // Menos monedas en móvil
+        const SHADOW_MAP_SIZE = isMobile ? 1024 : 2048; // Menor mapa de sombras en móvil
+        const RENDERER_ANTIALIAS = !isMobile; // Antialias solo en escritorio
+        const ENABLE_BLOOM = !isMobile; // Bloom solo en escritorio
+
+        const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8; 
 
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
         
         let spinButtonMesh = null; 
-        let spinArrowMesh = null;  
-        let spinGroup = null;      
+        let spinArrowMesh = null; 
+        let spinGroup = null; 
         
         let pointLight = null;
         let isLightFlashing = false;
 
-        let buttonMixer = null;      
-        let buttonAction = null;     
+        let buttonMixer = null; 
+        let buttonAction = null; 
         let isButtonAnimating = false; 
         
         let machineIsSpinning = false;
@@ -203,19 +213,18 @@
         let targetZ = Z_NORMAL;
         
         const ANIM_FPS = 30;
-        const TIME_Hover = 10 / ANIM_FPS;        
-        const TIME_ClickEnd = 8 / ANIM_FPS;     
-
+        const TIME_Hover = 10 / ANIM_FPS; 
+        const TIME_ClickEnd = 8 / ANIM_FPS; 
+        
         const resultText = document.getElementById('result-text');
         const loadingText = document.getElementById('loading');
         const vrButton = document.getElementById('vr-btn');
         const uiElements = document.querySelectorAll('.ui-element');
 
-        // --- NUEVAS VARIABLES PARA FULLSCREEN ---
+        // Variables Fullscreen
         const exitFsBtn = document.getElementById('exit-fs-btn');
         const landscapeOverlay = document.getElementById('landscape-overlay');
         const enterFsBtn = document.getElementById('enter-fs-btn');
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 
         const reelStates = Array(NUM_CARRETES).fill(null).map(() => ({ mode: 'IDLE', velocity: 0, targetAngle: 0 }));
@@ -231,7 +240,7 @@
         
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 150);
         
-        const renderer = new THREE.WebGLRenderer({ antialias: false }); 
+        const renderer = new THREE.WebGLRenderer({ antialias: RENDERER_ANTIALIAS }); 
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio); 
         renderer.shadowMap.enabled = true; 
@@ -250,10 +259,12 @@
         composer.addPass(renderPass);
         
         let bloomPass;
-        try {
-            bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), params.bloomStrength, params.bloomRadius, params.bloomThreshold);
-            composer.addPass(bloomPass);
-        } catch (e) { console.warn("Error creating BloomPass:", e); }
+        if (ENABLE_BLOOM) { 
+            try {
+                bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), params.bloomStrength, params.bloomRadius, params.bloomThreshold);
+                composer.addPass(bloomPass);
+            } catch (e) { console.warn("Error creating BloomPass:", e); }
+        }
 
         const fxaaPass = new ShaderPass(FXAAShader);
         const pixelRatio = renderer.getPixelRatio();
@@ -277,7 +288,8 @@
         sunLight.position.set(-10, 30, 20); 
         sunLight.castShadow = true;
         const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-        sunLight.shadow.mapSize.set(2048, 2048); sunLight.shadow.bias = -0.0005; sunLight.shadow.radius = 2; 
+        // USAR SHADOW_MAP_SIZE
+        sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); sunLight.shadow.bias = -0.0005; sunLight.shadow.radius = 2; 
         scene.add(sunLight);
 
         const fillPivot = new THREE.Object3D();
@@ -288,16 +300,10 @@
         fillLight.position.set(-8.10, -4.57, -7.28); 
         fillPivot.add(fillLight); 
         
-        // const fillLightHelper = new THREE.DirectionalLightHelper(fillLight, 2); scene.add(fillLightHelper);
-        // const fillGizmo = new TransformControls(camera, renderer.domElement); fillGizmo.attach(fillLight); scene.add(fillGizmo);
-
         pointLight = new THREE.PointLight(0xffaa00, 0, 100);
         pointLight.position.set(0, -5, 12); 
         pointLight.castShadow = false;
         scene.add(pointLight);
-
-        // const pointLightHelper = new THREE.PointLightHelper(pointLight, 0.5); scene.add(pointLightHelper);
-        // const pointLightGizmo = new TransformControls(camera, renderer.domElement); pointLightGizmo.attach(pointLight); scene.add(pointLightGizmo);
 
         const loader = new GLTFLoader();
         const textureLoader = new THREE.TextureLoader();
@@ -322,7 +328,6 @@
             raycaster.setFromCamera(pointer, camera);
             
             if (event.target.closest('.panel')) return; 
-            // Evitar click si se está pulsando los botones de UI nuevos
             if (event.target === exitFsBtn || event.target === enterFsBtn) return;
 
             if (isButtonDisabled) return;
@@ -355,7 +360,12 @@
                 scene.environment = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
                 cubemapTexture.dispose(); pmremGenerator.dispose();
 
-                await loadStructure(); await loadCoinSystem(); await loadSymbolMasters();
+                await loadStructure(); 
+                // --- Cargamos un modelo GLB para las monedas ---
+                await loadCoinSystem(); 
+                // --- En lugar de loadSymbolMasters() (que cargaba GLBs), generamos geometría ---
+                loadGeometryMasters(); 
+                
                 for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
                 loadingText.style.opacity = 0;
                 
@@ -366,6 +376,7 @@
         }
 
         function loadCoinSystem() {
+            // Asume que 'moneda.glb' sigue siendo necesario para la animación de monedas
             return new Promise((resolve, reject) => {
                 loader.load('moneda.glb', (gltf) => {
                     let coinGeometry, coinMaterial;
@@ -386,6 +397,55 @@
                 }, undefined, reject);
             });
         }
+        
+        // --- NUEVA FUNCIÓN PARA CREAR GEOMETRÍA DEL SÍMBOLO ---
+        function crearGeometriaSimbolo(tipo, index) {
+            let geometry;
+            const size = 1.0;
+            // Un color diferente para cada forma
+            const color = new THREE.Color().setHSL(index / GEOMETRIAS.length, 0.8, 0.5); 
+            const material = new THREE.MeshStandardMaterial({ 
+                color: color, 
+                metalness: 0.5, 
+                roughness: 0.4,
+                side: THREE.DoubleSide
+            });
+            
+            switch (tipo) {
+                case 'Box': geometry = new THREE.BoxGeometry(size * 1.5, size * 1.5, size * 1.5); break;
+                case 'Tetrahedron': geometry = new THREE.TetrahedronGeometry(size * 1.5); break;
+                case 'Octahedron': geometry = new THREE.OctahedronGeometry(size * 1.5); break;
+                case 'Icosahedron': geometry = new THREE.IcosahedronGeometry(size * 1.5); break;
+                case 'Dodecahedron': geometry = new THREE.DodecahedronGeometry(size * 1.5); break;
+                case 'Torus': geometry = new THREE.TorusGeometry(1.0, 0.5, 16, 100); break;
+                default: geometry = new THREE.SphereGeometry(size * 1.5);
+            }
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.castShadow = true;
+            mesh.receiveShadow = false;
+            return mesh;
+        }
+
+        // --- FUNCIÓN ADAPTADA PARA CARGAR MESTROS DE GEOMETRÍA ---
+        function loadGeometryMasters() {
+            // En lugar de cargar, simplemente generamos las mallas y las guardamos.
+            GEOMETRIAS.forEach((tipo, index) => {
+                // Guardamos una copia para clonar más tarde
+                symbolMasters[tipo] = crearGeometriaSimbolo(tipo, index);
+            });
+            return Promise.resolve();
+        }
+        
+        // --- loadSymbolMasters ORIGINAL (COMENTADA) ---
+        /*
+        function loadSymbolMasters() {
+             // Cargar todos los modelos únicos
+             const uniqueFiles = [...new Set(ARCHIVOS_GLB)];
+             const promises = uniqueFiles.map(file => new Promise((resolve, reject) => loader.load(file, (gltf) => { symbolMasters[file] = gltf.scene; resolve(); }, undefined, reject)));
+             return Promise.all(promises);
+        }
+        */
 
         function spawnCoins() {
             for(let i=0; i < COIN_COUNT; i++) {
@@ -469,25 +529,32 @@
             });
         }
 
-        function loadSymbolMasters() {
-            // Solo cargamos los únicos (en este caso solo 'sirena.glb')
-            const uniqueFiles = [...new Set(ARCHIVOS_GLB)];
-            const promises = uniqueFiles.map(file => new Promise((resolve, reject) => loader.load(file, (gltf) => { symbolMasters[file] = gltf.scene; resolve(); }, undefined, reject)));
-            return Promise.all(promises);
-        }
-
         function crearHilera(indicePosicion) {
             const reelGroup = new THREE.Group();
             const posX = (indicePosicion * SEPARACION_CARRETES) - ((NUM_CARRETES - 1) * SEPARACION_CARRETES / 2);
             reelGroup.position.x = posX; scene.add(reelGroup); reels.push(reelGroup);
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
-                // Siempre usamos 'sirena.glb' porque es el único elemento en ARCHIVOS_GLB
-                const fileName = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
-                const rawModel = symbolMasters[fileName].clone();
+                // Obtenemos el nombre de la geometría
+                const geoName = GEOMETRIAS[i % GEOMETRIAS.length];
+                
+                // Si usamos GLB, usaríamos: const rawModel = symbolMasters[ARCHIVOS_GLB[i % ARCHIVOS_GLB.length]].clone();
+                const rawModel = symbolMasters[geoName].clone();
+                
                 const pivot = new THREE.Group();
                 pivot.rotation.x = (i * ANGLE_STEP);
-                rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS); rawModel.rotation.x = AJUSTE_ROTACION_X;
-                pivot.add(rawModel); reelGroup.add(pivot); rawModel.traverse(setupSymbol);
+                rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS); 
+                
+                // Rotar para mejor visualización de las formas
+                if (geoName === 'Torus') {
+                    rawModel.rotation.set(Math.PI / 2, 0, 0); 
+                } else {
+                    rawModel.rotation.set(AJUSTE_ROTACION_X, 0, 0);
+                }
+                
+                pivot.add(rawModel); 
+                reelGroup.add(pivot); 
+                // Aseguramos que la sombra sea correcta si fuera necesario
+                rawModel.traverse(setupSymbol);
             }
         }
 
@@ -635,11 +702,12 @@
 
             if (allReelsIdle && machineIsSpinning) { machineIsSpinning = false; checkResults(); }
 
+            // Renderizar con VR o con el compositor (Post-processing)
             if (isVRMode) effectVR.render(scene, camera); else composer.render();
         }
 
         // =====================================================================
-        // AJUSTE DE CÁMARA (SOLUCIÓN PARA MÓVIL VERTICAL Y DESKTOP)
+        // AJUSTE DE CÁMARA (SOLUCIÓN MÓVIL Y DESKTOP)
         // =====================================================================
         function adjustCameraTarget() {
             const width = window.innerWidth; const height = window.innerHeight; const aspect = width / height;
@@ -661,11 +729,11 @@
 
         // Botón ENTRAR: Solicitar pantalla completa (requiere interacción del usuario)
         enterFsBtn.addEventListener('click', () => {
-             const docEl = document.documentElement;
-             if (docEl.requestFullscreen) docEl.requestFullscreen();
-             else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen(); // Safari
-             // Ocultamos el overlay inmediatamente tras el click
-             landscapeOverlay.style.display = 'none';
+            const docEl = document.documentElement;
+            if (docEl.requestFullscreen) docEl.requestFullscreen();
+            else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen(); // Safari
+            // Ocultamos el overlay inmediatamente tras el click
+            landscapeOverlay.style.display = 'none';
         });
 
         // Función para comprobar si debemos mostrar el overlay
@@ -673,11 +741,11 @@
             // Solo ejecutar en dispositivos móviles
             if (!isMobile) return;
 
-             const isLandscape = window.innerWidth > window.innerHeight;
-             // Comprobar si YA estamos en pantalla completa usando API estándar o Webkit
-             const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+            const isLandscape = window.innerWidth > window.innerHeight;
+            // Comprobar si YA estamos en pantalla completa usando API estándar o Webkit
+            const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
 
-             // Si es horizontal Y NO estamos ya en pantalla completa, mostrar el botón
+            // Si es horizontal Y NO estamos ya en pantalla completa, mostrar el botón
             if (isLandscape && !isFullscreen) {
                 landscapeOverlay.style.display = 'flex';
             } else {

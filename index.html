@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Zoom Fix</title>
+    <title>Slot Pro: Maximize Symbols</title>
     <style>
         body { 
             margin: 0; overflow: hidden; 
@@ -73,10 +73,12 @@
         const loadingText = document.getElementById('loading');
         const resultText = document.getElementById('result-text');
         
-        // VALORES DE CÁMARA (CALIBRADOS)
+        // --- CONSTANTES DE ENCUADRE ---
+        // Ajustado a 17.5 para maximizar tamaño sin cortar los bordes
+        const MACHINE_WIDTH_FACTOR = 17.5; 
+        
         const CAM_LAND_DIST = 25.0;  
         const CAM_LAND_Y = -2.0;     
-        const CAM_PORT_DIST = 29.5;  
         const CAM_PORT_Y = -4.5;     
         
         const Z_VR = 42; 
@@ -106,8 +108,10 @@
         const cameraPortrait = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 150);
         let activeCamera = cameraLandscape; 
 
-        let targetZ = CAM_LAND_DIST;
+        // Variables de objetivo
+        let targetX = 0;
         let targetY = CAM_LAND_Y;
+        let targetZ = CAM_LAND_DIST;
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -185,7 +189,6 @@
             }
         }
 
-        // --- CARGA SEGURA ---
         async function safeLoadSymbol(file) {
             return new Promise(resolve => {
                 loader.load(file, (gltf) => {
@@ -245,9 +248,6 @@
             scene.add(coinInstancedMesh);
         }
 
-        // =====================================================================
-        // 4. ESCENA Y OBJETOS
-        // =====================================================================
         function createLights() {
             const amb = new THREE.AmbientLight(0xffffff, 0.6); 
             scene.add(amb);
@@ -352,12 +352,15 @@
                 targetY = CAM_LAND_Y;
             } else { // Vertical
                 activeCamera = cameraPortrait;
-                targetZ = CAM_PORT_DIST; 
+                // MATEMÁTICA DE ENCUADRE OPTIMIZADA
+                targetZ = MACHINE_WIDTH_FACTOR / aspect; 
                 targetY = CAM_PORT_Y;
             }
+            
+            targetX = 0; 
 
-            if (isVRMode) { targetZ = Z_VR; targetY = 0; }
-            else if (isZoomed) { targetZ = Z_ZOOM; targetY = 0; }
+            if (isVRMode) { targetZ = Z_VR; targetY = 0; targetX = 0; }
+            else if (isZoomed) { targetZ = Z_ZOOM; targetY = 0; targetX = 0; }
         }
 
         function spinMachine() {
@@ -381,7 +384,6 @@
         }
 
         function checkResults() {
-             // 1. Calcular resultado
              const results = reels.map(r => {
                  let ang = r.rotation.x % (Math.PI*2);
                  if(ang < 0) ang += Math.PI*2;
@@ -392,24 +394,17 @@
              resultText.innerText = names.join(" - ");
              resultText.classList.add('show');
 
-             // 2. Verificar Premio
              if(names[0] === names[1] && names[1] === names[2]) {
-                 // --- SECUENCIA DE VICTORIA CORREGIDA ---
                  resultText.innerText += " ¡PREMIO!";
-                 isButtonDisabled = true; // Seguir bloqueado durante la celebración
-                 
-                 // A) Zoom IN
                  isZoomed = true; 
                  adjustCameraTarget();
-                 
-                 // B) Esperar 2 segundos viendo el premio
+                 isButtonDisabled = true;
+
                  setTimeout(() => {
-                     // C) Zoom OUT + Monedas
                      isZoomed = false;
                      adjustCameraTarget();
                      spawnCoins();
                      
-                     // D) Desbloquear botón después de que vuelen un poco
                      setTimeout(() => {
                          isButtonDisabled = false;
                      }, 1500);
@@ -417,7 +412,6 @@
                  }, 2000); 
 
              } else {
-                 // Si no hay premio, desbloquear inmediatamente
                  isButtonDisabled = false;
              }
         }
@@ -527,6 +521,7 @@
                 else pointLight.intensity = 0; 
             }
 
+            activeCamera.position.x += (targetX - activeCamera.position.x) * 0.05 * timeScale;
             activeCamera.position.z += (targetZ - activeCamera.position.z) * 0.05 * timeScale;
             activeCamera.position.y += (targetY - activeCamera.position.y) * 0.05 * timeScale;
 

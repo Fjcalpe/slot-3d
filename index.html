@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Slot Pro: Full Content</title>
+    <title>Slot Pro: Interactive Light</title>
     <style>
         body { 
             margin: 0; padding: 0; overflow: hidden; 
@@ -96,14 +96,14 @@
         const resultText = document.getElementById('result-text');
         
         // --- CONSTANTES DE ENCUADRE ---
-        const MACHINE_WIDTH_FACTOR = 17.5; 
+        const MACHINE_WIDTH_FACTOR = 18.5; 
         
         const CAM_LAND_DIST = 25.0;  
         const CAM_LAND_Y = -2.0;
         const CAM_LAND_X = 0.0;     
         
         const CAM_PORT_Y = -4.5;
-        const CAM_PORT_X = 1.2;      
+        const CAM_PORT_X = 0.0; // Centrado absoluto
         
         const Z_VR = 42; 
         const Z_ZOOM = 14; 
@@ -114,11 +114,20 @@
         const RADIO_ORBITA_SIMBOLOS = 6.0;
         const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
         
-        // --- RESTAURADOS LOS MODELOS ORIGINALES ---
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb'];
         const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
         
-        const params = { btnColor: "#ffffff", btnClick: 20.8, arrColor: "#fff68f", arrClick: 14.8 };
+        // Parámetros de iluminación del botón
+        const params = { 
+            btnColor: "#ffffff", 
+            btnIdle: 0.3, // Brillo normal (Listo)
+            btnHover: 0.6, // Brillo al pasar ratón
+            btnClick: 20.0, // Flashazo
+            
+            lightIdle: 50, // Luz ambiente del botón
+            lightHover: 150,
+            lightClick: 600
+        };
 
         const COIN_COUNT = 150; 
         const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8;
@@ -195,7 +204,6 @@
 
                 loadingText.innerText = "Cargando Modelos...";
                 
-                // --- LÓGICA PARA CARGAR TODOS LOS MODELOS ÚNICOS ---
                 const uniqueFiles = [...new Set(ARCHIVOS_GLB)];
                 for (const file of uniqueFiles) {
                     await safeLoadSymbol(file);
@@ -213,6 +221,9 @@
                 
                 window.addEventListener('resize', onWindowResize);
                 window.addEventListener('pointerdown', onPointerDown);
+                
+                // Agregamos pointermove para el efecto hover
+                window.addEventListener('pointermove', onPointerMove);
                 
                 document.getElementById('vr-btn').addEventListener('click', toggleVR);
                 enterFsBtn.addEventListener('click', requestFullscreen);
@@ -253,7 +264,6 @@
                     symbolMasters[file] = gltf.scene;
                     resolve();
                 }, undefined, () => {
-                    // Fallback visual si falta el archivo
                     const mesh = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color: Math.random() * 0xffffff}));
                     const g = new THREE.Group(); g.add(mesh);
                     symbolMasters[file] = g;
@@ -324,6 +334,7 @@
             fillLight.position.set(-8.10, -4.57, -7.28);
             fillPivot.add(fillLight);
 
+            // Luz puntual sobre el botón
             pointLight = new THREE.PointLight(0xffaa00, 0, 100);
             pointLight.position.set(0, -5, 12);
             scene.add(pointLight);
@@ -359,10 +370,8 @@
             reels.push(reelGroup);
             
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
-                // --- SELECCIÓN DEL MODELO SEGÚN ARRAY ---
                 const glbName = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length];
                 const model = symbolMasters[glbName].clone();
-                
                 const pivot = new THREE.Group();
                 pivot.rotation.x = (i * ANGLE_STEP);
                 model.position.set(0, 0, RADIO_ORBITA_SIMBOLOS);
@@ -422,7 +431,7 @@
                 targetY = CAM_PORT_Y;
             }
             
-            targetX = (activeCamera === cameraPortrait) ? CAM_PORT_X : CAM_LAND_X; 
+            targetX = CAM_PORT_X; 
 
             if (isVRMode) { targetZ = Z_VR; targetY = 0; targetX = 0; }
             else if (isZoomed) { targetZ = Z_ZOOM; targetY = 0; targetX = 0; }
@@ -435,7 +444,10 @@
             resultText.classList.remove('show');
             
             if(buttonAction) { buttonAction.reset(); buttonAction.play(); }
-            isLightFlashing = true; setTimeout(() => isLightFlashing = false, 200);
+            
+            // Efecto Flash al clicar
+            isLightFlashing = true; 
+            setTimeout(() => isLightFlashing = false, 200);
 
             reelStates.forEach(s => { s.mode = 'SPINNING'; s.velocity = 0; });
             for (let i = 0; i < NUM_CARRETES; i++) setTimeout(() => {
@@ -481,6 +493,28 @@
              }
         }
 
+        // --- HOVER LOGIC ---
+        let isHovering = false;
+        
+        function onPointerMove(e) {
+            pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = - (e.clientY / window.innerHeight) * 2 + 1;
+            
+            // Solo comprobamos hover si no estamos girando
+            if (!isButtonDisabled && (spinGroup || structureGroup)) {
+                raycaster.setFromCamera(pointer, activeCamera);
+                let hit = false;
+                if (spinGroup && raycaster.intersectObject(spinGroup, true).length > 0) hit = true;
+                else if (structureGroup && raycaster.intersectObject(structureGroup, true).length > 0) hit = true;
+                
+                isHovering = hit;
+                document.body.style.cursor = hit ? 'pointer' : 'default';
+            } else {
+                isHovering = false;
+                document.body.style.cursor = 'default';
+            }
+        }
+
         function onPointerDown(e) {
             if (e.target.tagName === 'BUTTON') return;
             if (isButtonDisabled) return;
@@ -491,15 +525,8 @@
             raycaster.setFromCamera(pointer, activeCamera);
 
             let hit = false;
-            
-            if (spinGroup) {
-                const intersects = raycaster.intersectObject(spinGroup, true);
-                if (intersects.length > 0) hit = true;
-            } 
-            if (!hit && structureGroup) {
-                const intersects = raycaster.intersectObject(structureGroup, true);
-                if (intersects.length > 0) hit = true;
-            }
+            if (spinGroup && raycaster.intersectObject(spinGroup, true).length > 0) hit = true; 
+            if (!hit && structureGroup && raycaster.intersectObject(structureGroup, true).length > 0) hit = true;
 
             if (hit) spinMachine();
         }
@@ -574,11 +601,38 @@
 
             if(allIdle && machineIsSpinning) { machineIsSpinning = false; checkResults(); }
 
-            if(pointLight) {
-                if(isLightFlashing) { pointLight.intensity = 576; pointLight.distance = 134; }
-                else pointLight.intensity = 0; 
+            // --- LOGICA DE ILUMINACIÓN DE BOTÓN ---
+            // 1. Estados de Luz
+            let targetBtnInt = 0;
+            let targetLightInt = 0;
+
+            if (isButtonDisabled) {
+                // Girando = Apagado
+                targetBtnInt = 0.0;
+                targetLightInt = 0;
+            } else if (isLightFlashing) {
+                // Flash al clicar (Prioridad máxima)
+                targetBtnInt = params.btnClick; 
+                targetLightInt = params.lightClick;
+            } else {
+                // Idle (Siempre encendida, pero cambia si pasas el ratón)
+                targetBtnInt = isHovering ? params.btnHover : params.btnIdle;
+                targetLightInt = isHovering ? params.lightHover : params.lightIdle;
             }
 
+            // 2. Aplicar al Mesh
+            if (spinButtonMesh && spinButtonMesh.material) {
+                // Interpolación suave para que la luz no cambie de golpe
+                spinButtonMesh.material.emissiveIntensity += (targetBtnInt - spinButtonMesh.material.emissiveIntensity) * 0.2;
+            }
+
+            // 3. Aplicar a la Luz Puntual
+            if (pointLight) {
+                pointLight.intensity += (targetLightInt - pointLight.intensity) * 0.2;
+                pointLight.distance = 134; // Distancia fija
+            }
+
+            // Movimiento de Cámara
             activeCamera.position.x += (targetX - activeCamera.position.x) * 0.05 * timeScale;
             activeCamera.position.z += (targetZ - activeCamera.position.z) * 0.05 * timeScale;
             activeCamera.position.y += (targetY - activeCamera.position.y) * 0.05 * timeScale;

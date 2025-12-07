@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Final Stable</title>
+    <title>Slot Pro: Final Stable (No Bloom)</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         
@@ -164,8 +164,8 @@
         const MAX_SPEED = 0.50; 
         const SPIN_DURATION_MS = 500;  
         const STOP_DELAY_MS = 150;     
-        const SPRING_TENSION = 0.25;   
-        const SPRING_DAMPING = 0.80;   
+        const SPRING_TENSION = 0.25;    
+        const SPRING_DAMPING = 0.80;    
         
         // --- VARIABLES CÁMARA (DUAL VR/NORMAL) ---
         let zNormal = 22; 
@@ -181,7 +181,7 @@
         const SHADOW_MAP_SIZE = 512; 
         
         const RENDERER_ANTIALIAS = false; 
-        const ENABLE_BLOOM = true; 
+        const ENABLE_BLOOM = false; // <--- BLOOM DESACTIVADO PARA RENDIMIENTO
 
         const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8; 
 

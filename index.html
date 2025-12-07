@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Test Geometría v2</title>
+    <title>Slot Pro: Test Sin Sombras</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -286,9 +286,14 @@
 
         const sunLight = new THREE.DirectionalLight(params.sunColor, params.sunInt); 
         sunLight.position.set(-10, 30, 20); 
-        sunLight.castShadow = true;
-        const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-        sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); sunLight.shadow.bias = -0.0005; sunLight.shadow.radius = 2; 
+        
+        // --- CAMBIO: DESACTIVAR SOMBRAS DE LA LUZ SOLAR ---
+        sunLight.castShadow = false;
+        
+        // Configuraciones de sombra ya no son estrictamente necesarias, pero las mantenemos comentadas o simplificadas:
+        // const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+        // sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); sunLight.shadow.bias = -0.0005; sunLight.shadow.radius = 2; 
+        
         scene.add(sunLight);
 
         const fillPivot = new THREE.Object3D();
@@ -299,12 +304,12 @@
         fillLight.position.set(-8.10, -4.57, -7.28); 
         fillPivot.add(fillLight); 
         
-        // --- NUEVA LÓGICA: DESACTIVAR LUZ DE RELLENO EN MÓVIL ---
+        // --- OPTIMIZACIÓN ANTERIOR: DESACTIVAR LUZ DE RELLENO EN MÓVIL ---
         if (isMobile) {
             fillLight.intensity = 0;
-            // Opcional: Desactivar casting de sombra en la luz de relleno (si lo tuviera, que por defecto no)
-            // fillLight.castShadow = false; 
         }
+        fillLight.castShadow = false; // Desactivamos las sombras de la luz de relleno también para ahorrar rendimiento
+        
 
         pointLight = new THREE.PointLight(0xffaa00, 0, 100);
         pointLight.position.set(0, -5, 12); 
@@ -392,7 +397,9 @@
                         coinMaterial.roughness = 0.3;
 
                         coinInstancedMesh = new THREE.InstancedMesh(coinGeometry, coinMaterial, COIN_COUNT);
-                        coinInstancedMesh.castShadow = true; coinInstancedMesh.receiveShadow = true; coinInstancedMesh.frustumCulled = false; 
+                        coinInstancedMesh.castShadow = true; 
+                        coinInstancedMesh.receiveShadow = true; 
+                        coinInstancedMesh.frustumCulled = false; 
                         for (let i = 0; i < COIN_COUNT; i++) { dummy.position.set(0, -500, 0); dummy.scale.set(0, 0, 0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
                         coinInstancedMesh.instanceMatrix.needsUpdate = true; scene.add(coinInstancedMesh);
                     }
@@ -401,7 +408,6 @@
             });
         }
         
-        // --- FUNCIÓN ADAPTADA: Generar mallas de geometría básica ---
         function crearGeometriaSimbolo(tipo, index) {
             let geometry;
             const size = 1.0;
@@ -424,7 +430,8 @@
             }
             
             const mesh = new THREE.Mesh(geometry, material);
-            mesh.castShadow = true;
+            // IMPORTANTE: Al desactivar las sombras del sol, podemos desactivar estas líneas
+            mesh.castShadow = false;
             mesh.receiveShadow = false;
             return mesh;
         }
@@ -478,7 +485,9 @@
 
         function setupStructure(node) {
             if (node.isMesh) {
-                node.castShadow = true; node.receiveShadow = true; 
+                // Desactivar castShadow para evitar cálculos innecesarios si la luz solar no proyecta
+                node.castShadow = false; 
+                node.receiveShadow = true; 
                 if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
             }
             if (node.name.toLowerCase() === 'spin') {
@@ -508,7 +517,8 @@
         }
 
         function setupSymbol(node) {
-             if (node.isMesh) { node.castShadow = true; node.receiveShadow = false; if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; }
+             // Desactivamos castShadow aquí también para optimización
+             if (node.isMesh) { node.castShadow = false; node.receiveShadow = false; if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace; }
         }
 
         function loadStructure() {

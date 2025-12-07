@@ -2,13 +2,24 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Maximize Symbols</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Slot Pro: Mobile Perfect</title>
     <style>
         body { 
-            margin: 0; overflow: hidden; 
+            margin: 0; padding: 0; overflow: hidden; 
             background-color: #000; 
             font-family: 'Segoe UI', sans-serif; touch-action: none; 
+        }
+        
+        /* CSS ESTRICTO PARA EL CANVAS: Evita desplazamientos fantasma */
+        canvas {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            outline: none;
         }
         
         #loading {
@@ -74,12 +85,17 @@
         const resultText = document.getElementById('result-text');
         
         // --- CONSTANTES DE ENCUADRE ---
-        // Ajustado a 17.5 para maximizar tamaño sin cortar los bordes
-        const MACHINE_WIDTH_FACTOR = 17.5; 
+        const MACHINE_WIDTH_FACTOR = 17.5; // Punto dulce de tamaño
         
+        // --- AJUSTES DE POSICIÓN ---
         const CAM_LAND_DIST = 25.0;  
-        const CAM_LAND_Y = -2.0;     
-        const CAM_PORT_Y = -4.5;     
+        const CAM_LAND_Y = -2.0;
+        const CAM_LAND_X = 0.0;     
+        
+        const CAM_PORT_Y = -4.5;
+        // CORRECCIÓN MÓVIL: Movemos la cámara un poco a la derecha (1.2)
+        // para compensar el desplazamiento que ves en el móvil.
+        const CAM_PORT_X = 1.2;      
         
         const Z_VR = 42; 
         const Z_ZOOM = 14; 
@@ -350,14 +366,14 @@
                 activeCamera = cameraLandscape;
                 targetZ = CAM_LAND_DIST; 
                 targetY = CAM_LAND_Y;
+                targetX = CAM_LAND_X;
             } else { // Vertical
                 activeCamera = cameraPortrait;
-                // MATEMÁTICA DE ENCUADRE OPTIMIZADA
                 targetZ = MACHINE_WIDTH_FACTOR / aspect; 
                 targetY = CAM_PORT_Y;
+                // Aplicamos la corrección X para móvil
+                targetX = CAM_PORT_X; 
             }
-            
-            targetX = 0; 
 
             if (isVRMode) { targetZ = Z_VR; targetY = 0; targetX = 0; }
             else if (isZoomed) { targetZ = Z_ZOOM; targetY = 0; targetX = 0; }

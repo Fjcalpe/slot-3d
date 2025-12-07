@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Final Stable (No Bloom)</title>
+    <title>Slot Pro: Sirena Performance Test</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         
@@ -150,8 +150,9 @@
             ambColor: "#ffffff", ambInt: 0.6,
         };
 
-        const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
-        const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku']; 
+        // --- SOLO SIRENA PARA RENDIMIENTO ---
+        const ARCHIVOS_GLB = ['sirena.glb']; 
+        const NOMBRES_SIMBOLOS = ['Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena', 'Sirena']; 
         
         const AJUSTE_ROTACION_X = 0; 
         const NUM_CARRETES = 3; 
@@ -181,7 +182,7 @@
         const SHADOW_MAP_SIZE = 512; 
         
         const RENDERER_ANTIALIAS = false; 
-        const ENABLE_BLOOM = false; // <--- BLOOM DESACTIVADO PARA RENDIMIENTO
+        const ENABLE_BLOOM = false; // DESACTIVADO
 
         const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8; 
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Cilindro GLB Simplificado</title>
+    <title>Slot Pro: Versión Única Optimizada</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -80,9 +80,9 @@
         }
         #landscape-overlay p { font-size: 1.2rem; margin-bottom: 25px; text-transform: uppercase; }
         #enter-fs-btn {
-             background: #ffd700; color: #000; border: none; padding: 15px 30px;
-             font-size: 1.1rem; font-weight: bold; border-radius: 8px; cursor: pointer;
-             text-transform: uppercase; box-shadow: 0 0 15px #ffd700;
+              background: #ffd700; color: #000; border: none; padding: 15px 30px;
+              font-size: 1.1rem; font-weight: bold; border-radius: 8px; cursor: pointer;
+              text-transform: uppercase; box-shadow: 0 0 15px #ffd700;
         }
     </style>
 </head>
@@ -160,10 +160,6 @@
         // CONFIGURACIÓN THREE.JS
         // =====================================================================
         
-        // --- ARCHIVOS GLB ORIGINALES (COMENTADOS) ---
-        // const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
-        // const NOMBRES_SIMBOLOS_GLB = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
-        
         // --- PARÁMETROS PARA TEST DE GEOMETRÍA ---
         const GEOMETRIAS = ['Box', 'Tetrahedron', 'Octahedron', 'Icosahedron', 'Dodecahedron', 'Torus'];
         const NOMBRES_SIMBOLOS = GEOMETRIAS.map(g => g.substring(0, 3)); 
@@ -183,13 +179,14 @@
         // --- CÁMARA (ZOOM IN MANTENIDO) ---
         const Z_NORMAL = 22; const Z_ZOOM = 14; const Z_VR = 42; 
         
+        // Usamos isMobile SOLO para lógica de UI (orientación), no para renderizado
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
-        // --- OPTIMIZACIÓN BASADA EN DISPOSITIVO ---
-        const COIN_COUNT = isMobile ? 50 : 150; 
-        const SHADOW_MAP_SIZE = isMobile ? 512 : 2048; // 512 para móvil
-        const RENDERER_ANTIALIAS = !isMobile; 
-        const ENABLE_BLOOM = !isMobile; 
+        // --- OPTIMIZACIÓN UNIFICADA (MOBILE FIRST) ---
+        const COIN_COUNT = 60; // Reducido para versión única
+        const SHADOW_MAP_SIZE = 1024; // Tamaño balanceado
+        const RENDERER_ANTIALIAS = false; // Desactivado nativo, usamos FXAA
+        const ENABLE_BLOOM = false; // Desactivado para optimización móvil global
 
         const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8; 
 
@@ -240,9 +237,13 @@
         
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 150);
         
+        // Antialias nativo desactivado por optimización
         const renderer = new THREE.WebGLRenderer({ antialias: RENDERER_ANTIALIAS }); 
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio); 
+        
+        // Limitamos PixelRatio a 2 para evitar sobrecarga en pantallas Retina/4K
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+        
         renderer.shadowMap.enabled = true; 
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         
@@ -287,7 +288,7 @@
         const sunLight = new THREE.DirectionalLight(params.sunColor, params.sunInt); 
         sunLight.position.set(-10, 30, 20); 
         
-        // --- FORZAR SOMBRAS: TRUE en móvil y escritorio ---
+        // --- SOMBRAS ACTIVAS ---
         sunLight.castShadow = true; 
         
         const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
@@ -305,15 +306,9 @@
         fillLight.position.set(-8.10, -4.57, -7.28); 
         fillPivot.add(fillLight); 
         
-        // LUZ DE RELLENO: DESACTIVADA EN MÓVIL
-        if (isMobile) {
-            fillLight.intensity = 0;
-        }
+        // Mantenemos la luz de relleno pero sin sombras (barata)
         fillLight.castShadow = false; 
         
-        // --- ELIMINAR EL SHADOW CATCHER VIRTUAL (Cilindro de baja poli) ---
-        // Se elimina el código que creaba el Shadow Catcher de baja geometría aquí.
-
         pointLight = new THREE.PointLight(0xffaa00, 0, 100);
         pointLight.position.set(0, -5, 12); 
         pointLight.castShadow = false;
@@ -445,14 +440,6 @@
             });
             return Promise.resolve();
         }
-        
-        /* --- loadSymbolMasters ORIGINAL COMENTADA ---
-        function loadSymbolMasters() {
-             const uniqueFiles = [...new Set(ARCHIVOS_GLB)];
-             const promises = uniqueFiles.map(file => new Promise((resolve, reject) => loader.load(file, (gltf) => { symbolMasters[file] = gltf.scene; resolve(); }, undefined, reject)));
-             return Promise.all(promises);
-        }
-        */
 
         function spawnCoins() {
             for(let i=0; i < COIN_COUNT; i++) {
@@ -494,11 +481,9 @@
                 node.receiveShadow = false; 
                 if (node.material && node.material.map) node.material.map.colorSpace = THREE.SRGBColorSpace;
 
-                // --- CAMBIO CLAVE: CILINDRO SIMPLIFICADO RECIBE SOMBRAS ---
+                // --- CILINDRO SIMPLIFICADO RECIBE SOMBRAS ---
                 if (node.name === 'Cilindro') {
-                    // El objeto con la geometría simplificada es el único que recibe sombras.
                     node.receiveShadow = sunLight.castShadow; 
-                    // Opcional: Aseguramos que solo proyecte si la luz solar está activada
                     node.castShadow = sunLight.castShadow;
                 }
             }

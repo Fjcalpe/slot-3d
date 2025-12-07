@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Slot Pro: Test Geometría</title>
+    <title>Slot Pro: Test Geometría v2</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -160,18 +160,18 @@
         // CONFIGURACIÓN THREE.JS
         // =====================================================================
         
-        // --- ARCHIVOS GLB ORIGINALES (COMENTADOS para probar geometría) ---
+        // --- ARCHIVOS GLB ORIGINALES (COMENTADOS) ---
         // const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb']; 
         // const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
         
-        // --- NUEVOS PARÁMETROS PARA GEOMETRÍA ---
+        // --- PARÁMETROS PARA TEST DE GEOMETRÍA ---
         const GEOMETRIAS = ['Box', 'Tetrahedron', 'Octahedron', 'Icosahedron', 'Dodecahedron', 'Torus'];
-        const NOMBRES_SIMBOLOS = GEOMETRIAS.map(g => g.substring(0, 3)); // Cub, Tet, Oct, etc.
+        const NOMBRES_SIMBOLOS = GEOMETRIAS.map(g => g.substring(0, 3)); 
         
         const AJUSTE_ROTACION_X = 0; 
         const NUM_CARRETES = 3; 
         const SEPARACION_CARRETES = 4.5; 
-        const NUM_ITEMS_POR_RUEDA = 6; // Reducido a 6 para un carril más corto y rápido
+        const NUM_ITEMS_POR_RUEDA = 6; 
         const RADIO_ORBITA_SIMBOLOS = 6.0; 
         const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
         const MAX_SPEED = 0.50; 
@@ -186,10 +186,10 @@
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
         // --- OPTIMIZACIÓN BASADA EN DISPOSITIVO ---
-        const COIN_COUNT = isMobile ? 50 : 150; // Menos monedas en móvil
-        const SHADOW_MAP_SIZE = isMobile ? 1024 : 2048; // Menor mapa de sombras en móvil
-        const RENDERER_ANTIALIAS = !isMobile; // Antialias solo en escritorio
-        const ENABLE_BLOOM = !isMobile; // Bloom solo en escritorio
+        const COIN_COUNT = isMobile ? 50 : 150; 
+        const SHADOW_MAP_SIZE = isMobile ? 1024 : 2048; 
+        const RENDERER_ANTIALIAS = !isMobile; 
+        const ENABLE_BLOOM = !isMobile; 
 
         const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8; 
 
@@ -288,7 +288,6 @@
         sunLight.position.set(-10, 30, 20); 
         sunLight.castShadow = true;
         const d = 30; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-        // USAR SHADOW_MAP_SIZE
         sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE); sunLight.shadow.bias = -0.0005; sunLight.shadow.radius = 2; 
         scene.add(sunLight);
 
@@ -300,6 +299,13 @@
         fillLight.position.set(-8.10, -4.57, -7.28); 
         fillPivot.add(fillLight); 
         
+        // --- NUEVA LÓGICA: DESACTIVAR LUZ DE RELLENO EN MÓVIL ---
+        if (isMobile) {
+            fillLight.intensity = 0;
+            // Opcional: Desactivar casting de sombra en la luz de relleno (si lo tuviera, que por defecto no)
+            // fillLight.castShadow = false; 
+        }
+
         pointLight = new THREE.PointLight(0xffaa00, 0, 100);
         pointLight.position.set(0, -5, 12); 
         pointLight.castShadow = false;
@@ -361,9 +367,7 @@
                 cubemapTexture.dispose(); pmremGenerator.dispose();
 
                 await loadStructure(); 
-                // --- Cargamos un modelo GLB para las monedas ---
                 await loadCoinSystem(); 
-                // --- En lugar de loadSymbolMasters() (que cargaba GLBs), generamos geometría ---
                 loadGeometryMasters(); 
                 
                 for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
@@ -376,7 +380,6 @@
         }
 
         function loadCoinSystem() {
-            // Asume que 'moneda.glb' sigue siendo necesario para la animación de monedas
             return new Promise((resolve, reject) => {
                 loader.load('moneda.glb', (gltf) => {
                     let coinGeometry, coinMaterial;
@@ -398,11 +401,10 @@
             });
         }
         
-        // --- NUEVA FUNCIÓN PARA CREAR GEOMETRÍA DEL SÍMBOLO ---
+        // --- FUNCIÓN ADAPTADA: Generar mallas de geometría básica ---
         function crearGeometriaSimbolo(tipo, index) {
             let geometry;
             const size = 1.0;
-            // Un color diferente para cada forma
             const color = new THREE.Color().setHSL(index / GEOMETRIAS.length, 0.8, 0.5); 
             const material = new THREE.MeshStandardMaterial({ 
                 color: color, 
@@ -427,20 +429,15 @@
             return mesh;
         }
 
-        // --- FUNCIÓN ADAPTADA PARA CARGAR MESTROS DE GEOMETRÍA ---
         function loadGeometryMasters() {
-            // En lugar de cargar, simplemente generamos las mallas y las guardamos.
             GEOMETRIAS.forEach((tipo, index) => {
-                // Guardamos una copia para clonar más tarde
                 symbolMasters[tipo] = crearGeometriaSimbolo(tipo, index);
             });
             return Promise.resolve();
         }
         
-        // --- loadSymbolMasters ORIGINAL (COMENTADA) ---
-        /*
+        /* --- loadSymbolMasters ORIGINAL COMENTADA ---
         function loadSymbolMasters() {
-             // Cargar todos los modelos únicos
              const uniqueFiles = [...new Set(ARCHIVOS_GLB)];
              const promises = uniqueFiles.map(file => new Promise((resolve, reject) => loader.load(file, (gltf) => { symbolMasters[file] = gltf.scene; resolve(); }, undefined, reject)));
              return Promise.all(promises);
@@ -534,17 +531,14 @@
             const posX = (indicePosicion * SEPARACION_CARRETES) - ((NUM_CARRETES - 1) * SEPARACION_CARRETES / 2);
             reelGroup.position.x = posX; scene.add(reelGroup); reels.push(reelGroup);
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
-                // Obtenemos el nombre de la geometría
                 const geoName = GEOMETRIAS[i % GEOMETRIAS.length];
                 
-                // Si usamos GLB, usaríamos: const rawModel = symbolMasters[ARCHIVOS_GLB[i % ARCHIVOS_GLB.length]].clone();
                 const rawModel = symbolMasters[geoName].clone();
                 
                 const pivot = new THREE.Group();
                 pivot.rotation.x = (i * ANGLE_STEP);
                 rawModel.position.set(0, 0, RADIO_ORBITA_SIMBOLOS); 
                 
-                // Rotar para mejor visualización de las formas
                 if (geoName === 'Torus') {
                     rawModel.rotation.set(Math.PI / 2, 0, 0); 
                 } else {
@@ -553,7 +547,6 @@
                 
                 pivot.add(rawModel); 
                 reelGroup.add(pivot); 
-                // Aseguramos que la sombra sea correcta si fuera necesario
                 rawModel.traverse(setupSymbol);
             }
         }

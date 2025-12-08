@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Slot Pro: Final v31 (Polished)</title>
+    <title>Slot Pro: Final v32 (Optimized)</title>
     <style>
         body { 
             margin: 0; padding: 0; overflow: hidden; 
@@ -102,13 +102,11 @@
         const loadingText = document.getElementById('loading');
         const resultText = document.getElementById('result-text');
         
-        // CAMBIO V31: Ancho objetivo del cilindro para encajar en pantalla
         const CYLINDER_TARGET_WIDTH = 19.0;
         
-        // --- CONSTANTES DE CÁMARA ---
         const CAM_LAND_DIST = 25.0;  
         const CAM_LAND_Y = 0.9;     
-        const CAM_PORT_Y = 0.0; // Centro absoluto
+        const CAM_PORT_Y = 0.0; 
         
         const Z_VR = 42; 
         const Z_ZOOM = 14; 
@@ -126,7 +124,10 @@
             sunIntensity: 2.8, sunPosY: 30, sunPosZ: 20,
             fillIntensity: 2.62, fillColor: '#fffbca',
             btnHoverEmissive: 3.095, lightHoverInt: 213, lightClickInt: 2889, btnIdleEmissive: 0.3, lightIdleInt: 50,
-            aoEnabled: true, aoRadius: 3.68, aoMinDist: 0.001, aoMaxDist: 0.08265,
+            
+            // CAMBIO V32: SSAO Desactivado por rendimiento
+            aoEnabled: false, aoRadius: 3.68, aoMinDist: 0.001, aoMaxDist: 0.08265,
+            
             landscapeRotX: -0.1, portraitRotX: 0.0, camRotY: 0.0, camRotZ: 0.0
         };
 
@@ -140,7 +141,6 @@
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050505);
 
-        // CÁMARA ÚNICA
         const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
         let activeCamera = camera;
 
@@ -157,9 +157,10 @@
         renderer.toneMapping = THREE.NoToneMapping;
         document.body.appendChild(renderer.domElement);
 
-        // --- POST PROCESSING SETUP ---
         let composer, ssaoPass;
         function initPostProcessing() {
+            if (!config.aoEnabled) { composer = null; return; }
+            
             const size = renderer.getDrawingBufferSize(new THREE.Vector2());
             const renderTarget = new THREE.WebGLRenderTarget(size.width, size.height, { samples: 4, type: THREE.HalfFloatType });
             composer = new EffectComposer(renderer, renderTarget);
@@ -188,7 +189,7 @@
         const coinsData = [];
         let coinInstancedMesh, dummy = new THREE.Object3D();
         
-        let spinGroup = null; let structureGroup = null;     
+        let spinGroup = null; let structureGroup = null;      
         let spinButtonMesh = null, spinArrowMesh = null;
         let machineIsSpinning = false, isButtonDisabled = false, isZoomed = false, isVRMode = false;
         let buttonMixer = null, buttonAction = null;
@@ -201,12 +202,11 @@
         let sunLight = null; let fillLight = null; let pointLight = null; let isLightFlashing = false;
         let loadedFont = null; let textMesh3D = null;
         
-        // CAMBIO V31: Material más reflectante (espejo)
         const goldTextMaterial = new THREE.MeshStandardMaterial({ 
             color: 0xffd700, 
-            metalness: 1.0,     // Metal puro
-            roughness: 0.01,    // Casi sin rugosidad (espejo)
-            envMapIntensity: 5.0 // Reflejos muy intensos
+            metalness: 1.0,     
+            roughness: 0.01,    
+            envMapIntensity: 5.0 
         });
 
         const raycaster = new THREE.Raycaster();
@@ -252,6 +252,13 @@
                 for(let i=0; i<COIN_COUNT; i++) coinsData.push({ position: new THREE.Vector3(), velocity: new THREE.Vector3(), rotation: new THREE.Euler(), rotSpeed: new THREE.Vector3(), active: false });
 
                 forceShadows(scene);
+                
+                // CAMBIO V32: Forzar explícitamente que las monedas NO tengan sombra tras forceShadows
+                if (coinInstancedMesh) {
+                    coinInstancedMesh.castShadow = false;
+                    coinInstancedMesh.receiveShadow = true;
+                }
+
                 initPostProcessing();
 
                 loadingText.style.display = 'none';
@@ -289,7 +296,6 @@
 
             textMesh3D.scale.set(scaleFactor, scaleFactor, scaleFactor);
             
-            // CAMBIO V31: Centrado vertical absoluto usando la posición Y de la cámara
             textMesh3D.position.set(0, activeCamera.position.y, 18); 
             
             textMesh3D.castShadow = true;
@@ -350,7 +356,9 @@
 
         function createCoinMesh(geo, mat) {
             coinInstancedMesh = new THREE.InstancedMesh(geo, mat, COIN_COUNT);
-            coinInstancedMesh.castShadow = false; coinInstancedMesh.receiveShadow = true;
+            // Configuración inicial, pero forceShadows podría sobrescribirla, por eso lo corregimos en init()
+            coinInstancedMesh.castShadow = false; 
+            coinInstancedMesh.receiveShadow = true;
             for(let i=0; i<COIN_COUNT; i++) { dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
             coinInstancedMesh.instanceMatrix.needsUpdate = true; scene.add(coinInstancedMesh);
         }
@@ -425,9 +433,8 @@
                 targetY = CAM_LAND_Y; 
                 targetRotX = config.landscapeRotX;
             } else { 
-                // Portrait: FOV 75
+                // Portrait
                 camera.fov = 75; 
-                // CAMBIO V31: Cálculo trigonométrico exacto para encajar CYLINDER_TARGET_WIDTH
                 targetZ = (CYLINDER_TARGET_WIDTH / 2.0) / (aspect * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2.0)));
                 targetY = CAM_PORT_Y; 
                 targetRotX = config.portraitRotX;
@@ -474,7 +481,6 @@
              const names = results.map(i => NOMBRES_SIMBOLOS[(NUM_ITEMS_POR_RUEDA - i) % NUM_ITEMS_POR_RUEDA]);
              
              if(names[0] === names[1] && names[1] === names[2]) {
-                 // CAMBIO V31: Texto actualizado
                  show3DResult("HAS GANADO!!");
                  
                  isButtonDisabled = true; isRewardActive = true;
@@ -546,10 +552,9 @@
 
             // --- CÁMARA Y ANIMACIÓN DE REBOTE ---
             let currentTargetZ = targetZ;
-            let currentTargetY = targetY; // Usamos el targetY calculado
+            let currentTargetY = targetY; 
             let cameraInterpolationSpeed = 0.05;
 
-            // Rotación Fija Dinámica
             activeCamera.rotation.set(targetRotX, config.camRotY, config.camRotZ);
 
             if (winAnimState.active && !isVRMode) {

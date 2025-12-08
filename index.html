@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Slot Pro: Final v32 (Optimized)</title>
+    <title>Slot Pro: Final v47 (Symbol Fading & Pulse Color)</title>
     <style>
         body { 
             margin: 0; padding: 0; overflow: hidden; 
@@ -110,6 +110,7 @@
         
         const Z_VR = 42; 
         const Z_ZOOM = 14; 
+        const TEXT_Z_POS = 15.0; 
 
         const NUM_CARRETES = 3;
         const SEPARACION_CARRETES = 4.5;
@@ -125,15 +126,22 @@
             fillIntensity: 2.62, fillColor: '#fffbca',
             btnHoverEmissive: 3.095, lightHoverInt: 213, lightClickInt: 2889, btnIdleEmissive: 0.3, lightIdleInt: 50,
             
-            // CAMBIO V32: SSAO Desactivado por rendimiento
             aoEnabled: false, aoRadius: 3.68, aoMinDist: 0.001, aoMaxDist: 0.08265,
-            
             landscapeRotX: -0.1, portraitRotX: 0.0, camRotY: 0.0, camRotZ: 0.0
         };
 
         const CLICK_BTN_EMISSIVE = 20.0; 
         const COIN_COUNT = 150; 
-        const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8;
+        const SPARKLE_COUNT = 400;
+        const DUST_COUNT = 1000; 
+        
+        const COIN_GRAVITY = 20.0; 
+        const COIN_SCALE = 0.8;
+        
+        const SPAWN_Y = -25.0; 
+        const SPAWN_Z = 12.0; 
+        const MIN_APEX = 2.0; 
+        const MAX_APEX = 5.0; 
 
         // =====================================================================
         // 2. ESCENA Y RENDERER
@@ -160,7 +168,6 @@
         let composer, ssaoPass;
         function initPostProcessing() {
             if (!config.aoEnabled) { composer = null; return; }
-            
             const size = renderer.getDrawingBufferSize(new THREE.Vector2());
             const renderTarget = new THREE.WebGLRenderTarget(size.width, size.height, { samples: 4, type: THREE.HalfFloatType });
             composer = new EffectComposer(renderer, renderTarget);
@@ -186,8 +193,18 @@
         const reels = [];
         const reelStates = Array(NUM_CARRETES).fill(null).map(() => ({ mode: 'IDLE', velocity: 0, targetAngle: 0 }));
         const symbolMasters = {};
+        
         const coinsData = [];
-        let coinInstancedMesh, dummy = new THREE.Object3D();
+        const sparklesData = [];
+        const dustData = [];
+        
+        let coinInstancedMesh;
+        let haloInstancedMesh; 
+        let sparkleInstancedMesh; 
+        let dustInstancedMesh;
+        
+        let dummy = new THREE.Object3D();
+        let colorDummy = new THREE.Color();
         
         let spinGroup = null; let structureGroup = null;      
         let spinButtonMesh = null, spinArrowMesh = null;
@@ -200,14 +217,19 @@
         let wasHoveringState = false; 
 
         let sunLight = null; let fillLight = null; let pointLight = null; let isLightFlashing = false;
-        let loadedFont = null; let textMesh3D = null;
+        let loadedFont = null; 
+        let textMesh3D = null;
         
         const goldTextMaterial = new THREE.MeshStandardMaterial({ 
             color: 0xffd700, 
-            metalness: 1.0,     
+            metalness: 1.0,      
             roughness: 0.01,    
             envMapIntensity: 5.0 
         });
+        
+        // MODIFICACIÓN V47: Colores para el pulso del texto
+        const pulseColorNormal = new THREE.Color(0xffd700); // Dorado
+        const pulseColorBright = new THREE.Color(0xffff55); // Amarillo muy brillante
 
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
@@ -235,6 +257,10 @@
 
                 createLights();
 
+                loadingText.innerText = "Cargando Texturas FX (WebP)...";
+                const haloTex = await safeLoadTexture('halo_monedas.webp');
+                const sparkleTex = await safeLoadTexture('destello.webp');
+
                 loadingText.innerText = "Cargando Tipografía...";
                 const fontLoader = new FontLoader();
                 loadedFont = await new Promise((resolve, reject) => {
@@ -247,17 +273,35 @@
                 await safeLoadStructure('cilindro.glb');
                 await safeLoadCoins('moneda.glb');
 
+                createParticleSystems(haloTex, sparkleTex);
+
                 loadingText.innerText = "Construyendo Slot...";
                 for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
-                for(let i=0; i<COIN_COUNT; i++) coinsData.push({ position: new THREE.Vector3(), velocity: new THREE.Vector3(), rotation: new THREE.Euler(), rotSpeed: new THREE.Vector3(), active: false });
+                
+                for(let i=0; i<COIN_COUNT; i++) {
+                    coinsData.push({ 
+                        position: new THREE.Vector3(), velocity: new THREE.Vector3(), rotation: new THREE.Euler(), active: false, life: 0, offsetPhase: Math.random() * Math.PI * 2 
+                    });
+                }
+                for(let i=0; i<SPARKLE_COUNT; i++) {
+                    sparklesData.push({
+                        position: new THREE.Vector3(), originPos: new THREE.Vector3(), velocity: new THREE.Vector3(), active: false, delay: 0, life: 0, offsetPhase: Math.random() * Math.PI * 2, baseScale: 0.2 + Math.random() * 0.8 
+                    });
+                }
+                for(let i=0; i<DUST_COUNT; i++) {
+                    dustData.push({
+                        position: new THREE.Vector3(), originPos: new THREE.Vector3(), velocity: new THREE.Vector3(), active: false, delay: 0, life: 0, offsetPhase: Math.random() * Math.PI * 2,
+                        baseScale: 0.1 + Math.random() * 0.3,
+                        color: new THREE.Color() 
+                    });
+                }
 
                 forceShadows(scene);
                 
-                // CAMBIO V32: Forzar explícitamente que las monedas NO tengan sombra tras forceShadows
-                if (coinInstancedMesh) {
-                    coinInstancedMesh.castShadow = false;
-                    coinInstancedMesh.receiveShadow = true;
-                }
+                if (coinInstancedMesh) { coinInstancedMesh.castShadow = false; coinInstancedMesh.receiveShadow = true; }
+                if (haloInstancedMesh) { haloInstancedMesh.castShadow = false; haloInstancedMesh.receiveShadow = false; }
+                if (sparkleInstancedMesh) { sparkleInstancedMesh.castShadow = false; sparkleInstancedMesh.receiveShadow = false; }
+                if (dustInstancedMesh) { dustInstancedMesh.castShadow = false; dustInstancedMesh.receiveShadow = false; }
 
                 initPostProcessing();
 
@@ -277,27 +321,72 @@
             }
         }
 
+        async function safeLoadTexture(url) {
+            return new Promise(resolve => {
+                textureLoader.load(url, resolve, undefined, () => {
+                    console.warn(`Textura ${url} no encontrada, usando fallback.`);
+                    const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(32,32,15,0,Math.PI*2); ctx.fill();
+                    const tex = new THREE.CanvasTexture(canvas);
+                    resolve(tex);
+                });
+            });
+        }
+
+        function createParticleSystems(haloTex, sparkleTex) {
+            const haloMat = new THREE.MeshBasicMaterial({ map: haloTex, color: 0xffd700, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, alphaTest: 0.05 });
+            const geo = new THREE.PlaneGeometry(1.8, 1.8); 
+            haloInstancedMesh = new THREE.InstancedMesh(geo, haloMat, COIN_COUNT);
+            haloInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            scene.add(haloInstancedMesh);
+
+            const sparkleMat = new THREE.MeshBasicMaterial({ map: sparkleTex, color: 0xffffff, transparent: true, opacity: 1.0, blending: THREE.NormalBlending, depthWrite: false, side: THREE.DoubleSide });
+            const geoS = new THREE.PlaneGeometry(0.5, 0.5); 
+            sparkleInstancedMesh = new THREE.InstancedMesh(geoS, sparkleMat, SPARKLE_COUNT);
+            sparkleInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            scene.add(sparkleInstancedMesh);
+            
+            const dustMat = new THREE.MeshBasicMaterial({ map: sparkleTex, color: 0xffffff, transparent: true, opacity: 1.0, blending: THREE.NormalBlending, depthWrite: false, side: THREE.DoubleSide });
+            const geoD = new THREE.PlaneGeometry(0.4, 0.4); 
+            dustInstancedMesh = new THREE.InstancedMesh(geoD, dustMat, DUST_COUNT);
+            dustInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            scene.add(dustInstancedMesh);
+
+            for(let i=0; i<COIN_COUNT; i++) { dummy.scale.set(0,0,0); dummy.updateMatrix(); haloInstancedMesh.setMatrixAt(i, dummy.matrix); }
+            for(let i=0; i<SPARKLE_COUNT; i++) { dummy.scale.set(0,0,0); dummy.updateMatrix(); sparkleInstancedMesh.setMatrixAt(i, dummy.matrix); }
+            for(let i=0; i<DUST_COUNT; i++) { dummy.scale.set(0,0,0); dummy.updateMatrix(); dustInstancedMesh.setMatrixAt(i, dummy.matrix); }
+        }
+
         function show3DResult(textStr) {
-            if (textMesh3D) { scene.remove(textMesh3D); textMesh3D.geometry.dispose(); }
+            if (textMesh3D) { 
+                scene.remove(textMesh3D); 
+                textMesh3D.geometry.dispose();
+                if(textMesh3D.material) textMesh3D.material.dispose();
+                textMesh3D = null;
+            }
+            
             const geometry = new TextGeometry(textStr, { font: loadedFont, size: 2.0, height: 0.4, curveSegments: 12, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.03, bevelOffset: 0, bevelSegments: 5 });
             geometry.computeBoundingBox();
             const xOffset = -0.5 * (geometry.boundingBox.max.x - geometry.boundingBox.min.x);
             const yOffset = -0.5 * (geometry.boundingBox.max.y - geometry.boundingBox.min.y);
             geometry.translate(xOffset, yOffset, 0);
-            textMesh3D = new THREE.Mesh(geometry, goldTextMaterial);
+            
+            textMesh3D = new THREE.Mesh(geometry, goldTextMaterial.clone());
             
             const textWidth = geometry.boundingBox.max.x - geometry.boundingBox.min.x;
-            const dist = activeCamera.position.z - 18; 
+            const dist = activeCamera.position.z - TEXT_Z_POS; 
             const vFOV = THREE.MathUtils.degToRad(activeCamera.fov); 
             const visibleHeight = 2 * Math.tan(vFOV / 2) * dist;
             const visibleWidth = visibleHeight * activeCamera.aspect;
+            
             let scaleFactor = (visibleWidth * 0.8) / textWidth;
-            scaleFactor = Math.min(scaleFactor, 1.5); 
+            scaleFactor = Math.min(scaleFactor, 0.56); 
+
+            textMesh3D.userData.baseScale = scaleFactor;
 
             textMesh3D.scale.set(scaleFactor, scaleFactor, scaleFactor);
-            
-            textMesh3D.position.set(0, activeCamera.position.y, 18); 
-            
+            textMesh3D.position.set(0, activeCamera.position.y, TEXT_Z_POS); 
             textMesh3D.castShadow = true;
             scene.add(textMesh3D);
         }
@@ -321,6 +410,8 @@
             return new Promise(resolve => {
                 loader.load(file, (gltf) => { symbolMasters[file] = gltf.scene; resolve(); }, undefined, () => {
                     const mesh = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color: Math.random() * 0xffffff}));
+                    // MODIFICACIÓN V47: Habilitar transparencia para el fading
+                    mesh.material.transparent = true;
                     const g = new THREE.Group(); g.add(mesh); symbolMasters[file] = g; resolve();
                 });
             });
@@ -356,7 +447,6 @@
 
         function createCoinMesh(geo, mat) {
             coinInstancedMesh = new THREE.InstancedMesh(geo, mat, COIN_COUNT);
-            // Configuración inicial, pero forceShadows podría sobrescribirla, por eso lo corregimos en init()
             coinInstancedMesh.castShadow = false; 
             coinInstancedMesh.receiveShadow = true;
             for(let i=0; i<COIN_COUNT; i++) { dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
@@ -393,14 +483,22 @@
             }
         }
 
-        function setupSymbol(node) { /* forceShadows se encarga */ }
-
         function crearHilera(index) {
             const reelGroup = new THREE.Group();
             reelGroup.position.x = (index * SEPARACION_CARRETES) - ((NUM_CARRETES - 1) * SEPARACION_CARRETES / 2);
             scene.add(reelGroup); reels.push(reelGroup);
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
-                const glbName = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length]; const model = symbolMasters[glbName].clone();
+                const glbName = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length]; 
+                // MODIFICACIÓN V47: Habilitar transparencia en símbolos clonados
+                const model = symbolMasters[glbName].clone();
+                model.traverse(child => {
+                    if (child.isMesh) {
+                        child.material = child.material.clone();
+                        child.material.transparent = true;
+                        child.userData.originalColor = child.material.color.clone();
+                    }
+                });
+                
                 const pivot = new THREE.Group(); pivot.rotation.x = (i * ANGLE_STEP);
                 model.position.set(0, 0, RADIO_ORBITA_SIMBOLOS); pivot.add(model); reelGroup.add(pivot);
             }
@@ -456,17 +554,20 @@
         function spinMachine() {
             if (machineIsSpinning || isButtonDisabled) return;
             machineIsSpinning = true; isButtonDisabled = true; isZoomed = false;
-            adjustCameraTarget(); resetCoins();
+            adjustCameraTarget(); resetCoinsAndFX();
             
             resultText.classList.remove('show');
             if (textMesh3D) {
                 scene.remove(textMesh3D);
+                textMesh3D.geometry.dispose();
+                if(textMesh3D.material) textMesh3D.material.dispose();
                 textMesh3D = null;
             }
 
             if(buttonAction) { buttonAction.reset(); buttonAction.play(); }
             isLightFlashing = true; setTimeout(() => isLightFlashing = false, 200);
-            spinCounter++; const forceWin = (spinCounter % 3 === 0);
+            spinCounter++; 
+            const forceWin = true; 
             reelStates.forEach(s => { s.mode = 'SPINNING'; s.velocity = 0; });
             for (let i = 0; i < NUM_CARRETES; i++) setTimeout(() => {
                 const state = reelStates[i]; state.mode = 'STOPPING';
@@ -482,7 +583,6 @@
              
              if(names[0] === names[1] && names[1] === names[2]) {
                  show3DResult("HAS GANADO!!");
-                 
                  isButtonDisabled = true; isRewardActive = true;
                  winAnimState.active = true; winAnimState.startTime = clock.getElapsedTime();
              } else { 
@@ -495,17 +595,215 @@
         let isHovering = false;
         function onPointerMove(e) { pointer.x = (e.clientX / window.innerWidth) * 2 - 1; pointer.y = - (e.clientY / window.innerHeight) * 2 + 1; if (!isButtonDisabled && (spinGroup || structureGroup)) { raycaster.setFromCamera(pointer, activeCamera); let hit = false; if (spinGroup && raycaster.intersectObject(spinGroup, true).length > 0) hit = true; else if (structureGroup && raycaster.intersectObject(structureGroup, true).length > 0) hit = true; isHovering = hit; document.body.style.cursor = hit ? 'pointer' : 'default'; } else { isHovering = false; document.body.style.cursor = 'default'; } }
         function onPointerDown(e) { if (e.target.tagName === 'BUTTON') return; if (isButtonDisabled) return; pointer.x = (e.clientX / window.innerWidth) * 2 - 1; pointer.y = - (e.clientY / window.innerHeight) * 2 + 1; raycaster.setFromCamera(pointer, activeCamera); let hit = false; if (spinGroup && raycaster.intersectObject(spinGroup, true).length > 0) hit = true; if (!hit && structureGroup && raycaster.intersectObject(structureGroup, true).length > 0) hit = true; if (hit) spinMachine(); }
-        function spawnCoins() { for(let i=0; i < COIN_COUNT; i++) { const data = coinsData[i]; data.active = true; data.position.set((Math.random() - 0.5) * COIN_SPREAD * 2, -8.0, 12.0 + (Math.random() * 4.0)); data.velocity.set((Math.random() - 0.5) * 10.0, COIN_BLAST_FORCE + (Math.random() * 10), (Math.random() - 0.5) * 5.0); data.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI); } }
-        function resetCoins() { if (!coinInstancedMesh) return; for(let i=0; i < COIN_COUNT; i++) { coinsData[i].active = false; dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); } coinInstancedMesh.instanceMatrix.needsUpdate = true; }
-        function updateCoins(delta) { if (!coinInstancedMesh) return; let activeCount = 0; for(let i=0; i < COIN_COUNT; i++) { const data = coinsData[i]; if (data.active) { data.velocity.y -= COIN_GRAVITY * delta; data.position.addScaledVector(data.velocity, delta); data.rotation.x += 5 * delta; dummy.position.copy(data.position); dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z); dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); if (data.position.y < -50) { data.active = false; dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); } else activeCount++; } } if (activeCount > 0) coinInstancedMesh.instanceMatrix.needsUpdate = true; }
+        
+        function spawnCoins() { 
+            const textCenterY = activeCamera.position.y; 
+
+            for(let i=0; i < COIN_COUNT; i++) { 
+                const data = coinsData[i]; data.active = true; 
+                const targetHeight = MIN_APEX + Math.random() * (MAX_APEX - MIN_APEX);
+                const height = targetHeight - SPAWN_Y;
+                const v0 = Math.sqrt(2 * COIN_GRAVITY * height); 
+                data.position.set((Math.random() - 0.5) * 15.0, SPAWN_Y, SPAWN_Z + (Math.random() * 4.0)); 
+                data.velocity.set((Math.random() - 0.5) * 8.0, v0 + (Math.random() * 2.0), (Math.random() - 0.5) * 4.0); 
+                data.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI); 
+            }
+
+            for(let i=0; i < SPARKLE_COUNT; i++) {
+                const data = sparklesData[i]; data.active = true; 
+                data.delay = 0; 
+                data.life = 3.0 + Math.random() * 2.0;
+                const angle = Math.random() * Math.PI * 2;
+                const radius = (7.0 + Math.random() * 4.0) * 0.7; 
+                data.originPos.set(radius * Math.cos(angle), textCenterY + (radius * Math.sin(angle) * 0.7), TEXT_Z_POS + (Math.random() - 0.5) * 5.0);
+                data.position.copy(data.originPos);
+                data.velocity.set((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5);
+            }
+
+            for(let i=0; i < DUST_COUNT; i++) {
+                const data = dustData[i]; data.active = true;
+                data.delay = 0; 
+                data.life = 4.0 + Math.random() * 2.0; 
+                const angle = Math.random() * Math.PI * 2;
+                const radius = (6.0 + Math.random() * 5.0) * 0.7; 
+                data.originPos.set(radius * Math.cos(angle), textCenterY + (radius * Math.sin(angle) * 0.8), TEXT_Z_POS + (Math.random() - 0.5) * 8.0);
+                data.position.copy(data.originPos);
+                data.velocity.set((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2);
+                data.color.setHSL(0.11, 1.0, 0.7 + Math.random() * 0.3);
+            }
+        }
+        
+        function resetCoinsAndFX() { 
+            if (!coinInstancedMesh) return; 
+            dummy.scale.set(0,0,0); dummy.updateMatrix(); 
+            for(let i=0; i < COIN_COUNT; i++) { coinsData[i].active = false; coinInstancedMesh.setMatrixAt(i, dummy.matrix); }
+            coinInstancedMesh.instanceMatrix.needsUpdate = true; 
+            if(haloInstancedMesh) {
+                for(let i=0; i < COIN_COUNT; i++) haloInstancedMesh.setMatrixAt(i, dummy.matrix);
+                haloInstancedMesh.instanceMatrix.needsUpdate = true;
+            }
+            if(sparkleInstancedMesh) {
+                for(let i=0; i < SPARKLE_COUNT; i++) { sparklesData[i].active = false; sparkleInstancedMesh.setMatrixAt(i, dummy.matrix); }
+                sparkleInstancedMesh.instanceMatrix.needsUpdate = true;
+            }
+            if(dustInstancedMesh) {
+                for(let i=0; i < DUST_COUNT; i++) { dustData[i].active = false; dustInstancedMesh.setMatrixAt(i, dummy.matrix); }
+                dustInstancedMesh.instanceMatrix.needsUpdate = true;
+            }
+        }
+
+        // MODIFICACIÓN V47: Pulsación con cambio de color amarillo brillante
+        function updateWinTextAnim(time) {
+            if (!textMesh3D || !winAnimState.active) return;
+
+            const base = textMesh3D.userData.baseScale || 0.56;
+            const elapsed = clock.getElapsedTime() - winAnimState.startTime;
+            
+            // Pulsación: Sube a 120% y baja entre el segundo 3.5 y 4.0
+            const pulseStart = 3.5;
+            const pulseDur = 0.5;
+            
+            let pulseScale = 1.0;
+            let pulseFactor = 0.0;
+            
+            if (elapsed >= pulseStart && elapsed < pulseStart + pulseDur) {
+                const t = (elapsed - pulseStart) / pulseDur; 
+                // Curva suave de subida y bajada (sinusoidal 0 -> 1 -> 0)
+                pulseFactor = Math.sin(t * Math.PI);
+                
+                // Escala de 1.0 a 1.2
+                pulseScale = 1.0 + 0.2 * pulseFactor;
+            }
+            
+            const currentScale = base * pulseScale;
+            textMesh3D.scale.set(currentScale, currentScale, currentScale);
+
+            // Cambio de color: De Dorado (base) a Amarillo Brillante (pico) y vuelta
+            textMesh3D.material.color.lerpColors(pulseColorNormal, pulseColorBright, pulseFactor);
+            // Aumentar emisión de luz en el pico
+            textMesh3D.material.emissive.setScalar(pulseFactor * 0.5);
+        }
+
+        // MODIFICACIÓN V47: Función para ocultar/oscurecer símbolos traseros
+        function updateSymbolVisibility() {
+            reels.forEach((reelGroup) => {
+                const reelAngle = reelGroup.rotation.x;
+                reelGroup.children.forEach((pivotGroup, i) => {
+                    // Calcular ángulo global del símbolo (teniendo en cuenta la rotación del carrete)
+                    // Ajustamos el offset para que 0 sea "al frente"
+                    const symbolAngle = pivotGroup.rotation.x; 
+                    let totalAngle = (reelAngle + symbolAngle) % (Math.PI * 2);
+                    if(totalAngle < 0) totalAngle += (Math.PI * 2);
+
+                    // Coseno del ángulo: 1.0 es frente, 0.0 es arriba/abajo, -1.0 es atrás
+                    const visFactor = Math.cos(totalAngle);
+
+                    // Lógica de desvanecimiento
+                    // Si visFactor > 0.5 (aprox +/- 60 grados), opacidad 1.
+                    // Si visFactor < 0 (atrás), opacidad 0.
+                    // Interpolación entre 0.5 y 0.0
+                    let opacity = 1.0;
+                    if (visFactor < 0.5) {
+                        opacity = Math.max(0, (visFactor) / 0.5); 
+                    }
+                    
+                    // Aplicar a todos los meshes del símbolo (el GLB puede tener varios hijos)
+                    const symbolWrapper = pivotGroup.children[0]; // El grupo o mesh cargado
+                    if (symbolWrapper) {
+                        symbolWrapper.traverse((child) => {
+                            if (child.isMesh && child.material) {
+                                child.material.opacity = opacity;
+                                
+                                // También oscurecer el color para que se funda con el negro del fondo
+                                if (child.userData.originalColor) {
+                                    child.material.color.copy(child.userData.originalColor).multiplyScalar(opacity);
+                                }
+                            }
+                        });
+                    }
+                });
+            });
+        }
+
+        function updateParticles(delta, time) {
+            let activeCoinCount = 0;
+            if (coinInstancedMesh && haloInstancedMesh) {
+                for(let i=0; i < COIN_COUNT; i++) {
+                    const data = coinsData[i];
+                    if (data.active) {
+                        data.velocity.y -= COIN_GRAVITY * delta;
+                        data.position.addScaledVector(data.velocity, delta);
+                        data.rotation.x += 5 * delta;
+                        dummy.position.copy(data.position); dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z); dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix);
+                        dummy.rotation.set(0,0,0); dummy.quaternion.copy(activeCamera.quaternion); dummy.position.copy(data.position);
+                        const blink = 0.5 + 0.5 * Math.sin(time * 10.0 + data.offsetPhase); colorDummy.setHSL(0.14, 1.0, 0.5 * blink); 
+                        dummy.scale.set(1, 1, 1); dummy.updateMatrix(); haloInstancedMesh.setMatrixAt(i, dummy.matrix); haloInstancedMesh.setColorAt(i, colorDummy);
+                        if (data.position.y < SPAWN_Y - 10) {  data.active = false; dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); haloInstancedMesh.setMatrixAt(i, dummy.matrix);
+                        } else activeCoinCount++;
+                    }
+                }
+                if (activeCoinCount > 0) { coinInstancedMesh.instanceMatrix.needsUpdate = true; haloInstancedMesh.instanceMatrix.needsUpdate = true; if(haloInstancedMesh.instanceColor) haloInstancedMesh.instanceColor.needsUpdate = true; }
+            }
+
+            let activeSparkleCount = 0;
+            if (sparkleInstancedMesh) {
+                for(let i=0; i < SPARKLE_COUNT; i++) {
+                    const data = sparklesData[i];
+                    if (data.active) {
+                        if (data.delay > 0) { data.delay -= delta; dummy.scale.set(0,0,0); dummy.updateMatrix(); sparkleInstancedMesh.setMatrixAt(i, dummy.matrix); continue; }
+                        data.originPos.addScaledVector(data.velocity, delta); 
+                        data.position.x = data.originPos.x + Math.sin(time * 1.5 + data.offsetPhase) * 1.5;
+                        data.position.y = data.originPos.y + Math.cos(time * 1.2 + data.offsetPhase) * 0.5;
+                        data.position.z = data.originPos.z;
+                        data.life -= delta;
+                        if (data.life <= 0) { data.active = false; dummy.scale.set(0,0,0); dummy.updateMatrix(); sparkleInstancedMesh.setMatrixAt(i, dummy.matrix);
+                        } else {
+                            dummy.position.copy(data.position); dummy.quaternion.copy(activeCamera.quaternion);
+                            colorDummy.setHex(0xffffff);
+                            const pulseFactor = 0.75 + 0.25 * Math.sin(time * Math.PI * 4); const finalScale = data.baseScale * pulseFactor;
+                            dummy.scale.set(finalScale, finalScale, finalScale); dummy.updateMatrix(); sparkleInstancedMesh.setMatrixAt(i, dummy.matrix); sparkleInstancedMesh.setColorAt(i, colorDummy); activeSparkleCount++;
+                        }
+                    }
+                }
+                if (activeSparkleCount > 0 || spinCounter > 0) { sparkleInstancedMesh.instanceMatrix.needsUpdate = true; if(sparkleInstancedMesh.instanceColor) sparkleInstancedMesh.instanceColor.needsUpdate = true; }
+            }
+
+            let activeDustCount = 0;
+            if (dustInstancedMesh) {
+                for(let i=0; i < DUST_COUNT; i++) {
+                    const data = dustData[i];
+                    if (data.active) {
+                        if (data.delay > 0) { data.delay -= delta; dummy.scale.set(0,0,0); dummy.updateMatrix(); dustInstancedMesh.setMatrixAt(i, dummy.matrix); continue; }
+                        data.originPos.addScaledVector(data.velocity, delta); 
+                        data.position.x = data.originPos.x + Math.sin(time * 0.8 + data.offsetPhase) * 0.8;
+                        data.position.y = data.originPos.y + Math.cos(time * 0.6 + data.offsetPhase) * 0.3;
+                        data.position.z = data.originPos.z;
+                        data.life -= delta;
+                        if (data.life <= 0) { data.active = false; dummy.scale.set(0,0,0); dummy.updateMatrix(); dustInstancedMesh.setMatrixAt(i, dummy.matrix);
+                        } else {
+                            dummy.position.copy(data.position); dummy.quaternion.copy(activeCamera.quaternion);
+                            colorDummy.copy(data.color);
+                            const pulseFactor = 0.85 + 0.15 * Math.sin(time * Math.PI * 2 + data.offsetPhase); const finalScale = data.baseScale * pulseFactor;
+                            dummy.scale.set(finalScale, finalScale, finalScale); dummy.updateMatrix(); dustInstancedMesh.setMatrixAt(i, dummy.matrix); dustInstancedMesh.setColorAt(i, colorDummy); activeDustCount++;
+                        }
+                    }
+                }
+                if (activeDustCount > 0 || spinCounter > 0) { dustInstancedMesh.instanceMatrix.needsUpdate = true; if(dustInstancedMesh.instanceColor) dustInstancedMesh.instanceColor.needsUpdate = true; }
+            }
+        }
 
         function animate() {
             requestAnimationFrame(animate);
             const delta = Math.min(clock.getDelta(), 0.1);
+            const time = clock.getElapsedTime();
             const timeScale = delta * 60;
 
             if(buttonMixer) buttonMixer.update(delta);
-            updateCoins(delta);
+            updateParticles(delta, time);
+            updateWinTextAnim(time);
+            
+            // MODIFICACIÓN V47: Actualizar visibilidad de símbolos
+            updateSymbolVisibility();
 
             let allIdle = true;
             reels.forEach((r, i) => {
@@ -515,7 +813,6 @@
             });
             if(allIdle && machineIsSpinning) { machineIsSpinning = false; checkResults(); }
 
-            // --- LÓGICA DE ILUMINACIÓN AVANZADA ---
             let targetBtnInt = 0; let targetLightInt = 0;
             let targetSun = config.sunIntensity; let targetFill = config.fillIntensity;
 
@@ -550,7 +847,6 @@
             if (spinButtonMesh && spinButtonMesh.material) spinButtonMesh.material.emissiveIntensity += (targetBtnInt - spinButtonMesh.material.emissiveIntensity) * 0.2;
             if (pointLight) { pointLight.intensity += (targetLightInt - pointLight.intensity) * 0.2; pointLight.distance = 134; }
 
-            // --- CÁMARA Y ANIMACIÓN DE REBOTE ---
             let currentTargetZ = targetZ;
             let currentTargetY = targetY; 
             let cameraInterpolationSpeed = 0.05;
@@ -564,8 +860,13 @@
                     winAnimState.active = false; spawnCoins(); 
                     setTimeout(() => { 
                         isButtonDisabled = false; isRewardActive = false;
-                        if (textMesh3D) { scene.remove(textMesh3D); textMesh3D = null; }
-                    }, 2500);
+                        if (textMesh3D) { 
+                            scene.remove(textMesh3D); 
+                            textMesh3D.geometry.dispose();
+                            if(textMesh3D.material) textMesh3D.material.dispose();
+                            textMesh3D = null; 
+                        }
+                    }, 5000);
                 } else {
                     const bounceFactor = Math.sin(t * Math.PI); 
                     currentTargetZ = THREE.MathUtils.lerp(targetZ, Z_ZOOM, bounceFactor);

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Slot Pro: Interactive 3D</title>
+    <title>Slot Pro: Final v31 (Polished)</title>
     <style>
         body { 
             margin: 0; padding: 0; overflow: hidden; 
@@ -51,7 +51,7 @@
         }
         #landscape-overlay p { 
             font-size: 1.2rem; margin-bottom: 30px; text-transform: uppercase; 
-            max-width: 80%; line-height: 1.5; color: #fff;
+            max-width: 16%; line-height: 1.5; color: #fff;
         }
         #enter-fs-btn {
               background: #ffd700; color: #000; border: none; padding: 20px 40px;
@@ -87,6 +87,8 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+        import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
         import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
         
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -100,14 +102,13 @@
         const loadingText = document.getElementById('loading');
         const resultText = document.getElementById('result-text');
         
-        const MACHINE_WIDTH_FACTOR = 18.5; 
+        // CAMBIO V31: Ancho objetivo del cilindro para encajar en pantalla
+        const CYLINDER_TARGET_WIDTH = 19.0;
         
+        // --- CONSTANTES DE CÁMARA ---
         const CAM_LAND_DIST = 25.0;  
-        // Valores fijos finales
-        const CAM_LAND_Y = 0.0;     
-        
-        const CAM_PORT_Y = -3.0; 
-        const CAM_PORT_X = 0.0;
+        const CAM_LAND_Y = 0.9;     
+        const CAM_PORT_Y = 0.0; // Centro absoluto
         
         const Z_VR = 42; 
         const Z_ZOOM = 14; 
@@ -121,34 +122,15 @@
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb'];
         const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
         
-        // --- CONFIGURACIÓN MAESTRA (Fijada desde V20) ---
         const config = {
-            // Iluminación
-            sunIntensity: 3.52, sunPosY: 30, sunPosZ: 20,
+            sunIntensity: 2.8, sunPosY: 30, sunPosZ: 20,
             fillIntensity: 2.62, fillColor: '#fffbca',
-            
-            // Botón
-            btnHoverEmissive: 0.6, 
-            lightHoverInt: 300, 
-            lightClickInt: 2889, 
-            btnIdleEmissive: 0.3, 
-            lightIdleInt: 50,
-            
-            // AO
-            aoEnabled: true, 
-            aoRadius: 3.392, 
-            aoMinDist: 0.001841, 
-            aoMaxDist: 0.09686,
-
-            // Cámara
-            camPosY: 0.9,
-            camRotX: -0.1,
-            camRotY: 0.0,
-            camRotZ: 0.0
+            btnHoverEmissive: 3.095, lightHoverInt: 213, lightClickInt: 2889, btnIdleEmissive: 0.3, lightIdleInt: 50,
+            aoEnabled: true, aoRadius: 3.68, aoMinDist: 0.001, aoMaxDist: 0.08265,
+            landscapeRotX: -0.1, portraitRotX: 0.0, camRotY: 0.0, camRotZ: 0.0
         };
 
         const CLICK_BTN_EMISSIVE = 20.0; 
-        
         const COIN_COUNT = 150; 
         const COIN_GRAVITY = 25.0; const COIN_BLAST_FORCE = 20; const COIN_SPREAD = 10.0; const COIN_SCALE = 0.8;
 
@@ -158,22 +140,21 @@
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050505);
 
-        const cameraLandscape = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 150);
-        const cameraPortrait = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 150);
-        let activeCamera = cameraLandscape; 
+        // CÁMARA ÚNICA
+        const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
+        let activeCamera = camera;
 
         let targetX = 0;
         let targetY = CAM_LAND_Y;
         let targetZ = CAM_LAND_DIST;
+        let targetRotX = config.landscapeRotX;
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(1); 
         renderer.shadowMap.enabled = true;
-        
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         renderer.toneMapping = THREE.NoToneMapping;
-        
         document.body.appendChild(renderer.domElement);
 
         // --- POST PROCESSING SETUP ---
@@ -207,9 +188,7 @@
         const coinsData = [];
         let coinInstancedMesh, dummy = new THREE.Object3D();
         
-        let spinGroup = null;          
-        let structureGroup = null;     
-        
+        let spinGroup = null; let structureGroup = null;     
         let spinButtonMesh = null, spinArrowMesh = null;
         let machineIsSpinning = false, isButtonDisabled = false, isZoomed = false, isVRMode = false;
         let buttonMixer = null, buttonAction = null;
@@ -219,10 +198,16 @@
         let spinCounter = 0;
         let wasHoveringState = false; 
 
-        let sunLight = null;
-        let fillLight = null;
-        let pointLight = null;
-        let isLightFlashing = false;
+        let sunLight = null; let fillLight = null; let pointLight = null; let isLightFlashing = false;
+        let loadedFont = null; let textMesh3D = null;
+        
+        // CAMBIO V31: Material más reflectante (espejo)
+        const goldTextMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xffd700, 
+            metalness: 1.0,     // Metal puro
+            roughness: 0.01,    // Casi sin rugosidad (espejo)
+            envMapIntensity: 5.0 // Reflejos muy intensos
+        });
 
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
@@ -249,6 +234,12 @@
                 cubemapTexture.dispose(); pmremGenerator.dispose();
 
                 createLights();
+
+                loadingText.innerText = "Cargando Tipografía...";
+                const fontLoader = new FontLoader();
+                loadedFont = await new Promise((resolve, reject) => {
+                    fontLoader.load('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json', resolve, undefined, reject);
+                });
 
                 loadingText.innerText = "Cargando Modelos...";
                 const uniqueFiles = [...new Set(ARCHIVOS_GLB)];
@@ -277,6 +268,32 @@
             } catch (err) {
                 loadingText.innerText = "Error: " + err.message; console.error(err);
             }
+        }
+
+        function show3DResult(textStr) {
+            if (textMesh3D) { scene.remove(textMesh3D); textMesh3D.geometry.dispose(); }
+            const geometry = new TextGeometry(textStr, { font: loadedFont, size: 2.0, height: 0.4, curveSegments: 12, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.03, bevelOffset: 0, bevelSegments: 5 });
+            geometry.computeBoundingBox();
+            const xOffset = -0.5 * (geometry.boundingBox.max.x - geometry.boundingBox.min.x);
+            const yOffset = -0.5 * (geometry.boundingBox.max.y - geometry.boundingBox.min.y);
+            geometry.translate(xOffset, yOffset, 0);
+            textMesh3D = new THREE.Mesh(geometry, goldTextMaterial);
+            
+            const textWidth = geometry.boundingBox.max.x - geometry.boundingBox.min.x;
+            const dist = activeCamera.position.z - 18; 
+            const vFOV = THREE.MathUtils.degToRad(activeCamera.fov); 
+            const visibleHeight = 2 * Math.tan(vFOV / 2) * dist;
+            const visibleWidth = visibleHeight * activeCamera.aspect;
+            let scaleFactor = (visibleWidth * 0.8) / textWidth;
+            scaleFactor = Math.min(scaleFactor, 1.5); 
+
+            textMesh3D.scale.set(scaleFactor, scaleFactor, scaleFactor);
+            
+            // CAMBIO V31: Centrado vertical absoluto usando la posición Y de la cámara
+            textMesh3D.position.set(0, activeCamera.position.y, 18); 
+            
+            textMesh3D.castShadow = true;
+            scene.add(textMesh3D);
         }
 
         function forceShadows(parent) {
@@ -381,16 +398,65 @@
             }
         }
 
-        function toggleVR() { isVRMode = !isVRMode; if (isVRMode) { if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); activeCamera = cameraLandscape; } else { if (document.exitFullscreen) document.exitFullscreen(); onWindowResize(); } adjustCameraTarget(); }
-        function onWindowResize() { const w = window.innerWidth, h = window.innerHeight; renderer.setSize(w, h); if(composer) { composer.setSize(w, h); } effectVR.setSize(w, h); const aspect = w / h; cameraLandscape.aspect = aspect; cameraLandscape.updateProjectionMatrix(); cameraPortrait.aspect = aspect; cameraPortrait.updateProjectionMatrix(); checkOrientation(); adjustCameraTarget(); }
+        function toggleVR() { isVRMode = !isVRMode; if (isVRMode) { if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); activeCamera = camera; } else { if (document.exitFullscreen) document.exitFullscreen(); onWindowResize(); } adjustCameraTarget(); }
+        
+        function onWindowResize() { 
+            const w = window.innerWidth, h = window.innerHeight; 
+            renderer.setSize(w, h); 
+            if(composer) { composer.setSize(w, h); } 
+            effectVR.setSize(w, h); 
+            
+            camera.aspect = w / h; 
+            camera.updateProjectionMatrix(); 
+            
+            checkOrientation(); 
+            adjustCameraTarget();
+        }
+        
         function checkOrientation() { if (!isMobile) return; const isLandscape = window.innerWidth > window.innerHeight; const isFS = document.fullscreenElement || document.webkitFullscreenElement; if (isLandscape && !isFS) overlay.style.display = 'flex'; else overlay.style.display = 'none'; }
-        function adjustCameraTarget() { const aspect = window.innerWidth / window.innerHeight; if (aspect >= 1.0) { activeCamera = cameraLandscape; targetZ = CAM_LAND_DIST; targetY = CAM_LAND_Y; } else { activeCamera = cameraPortrait; targetZ = MACHINE_WIDTH_FACTOR / aspect; targetY = CAM_PORT_Y; } targetX = CAM_PORT_X; if (isVRMode) { targetZ = Z_VR; targetY = 0; targetX = 0; } else if (isZoomed) { targetZ = Z_ZOOM; targetY = 0; targetX = 0; } }
+        
+        function adjustCameraTarget() { 
+            const aspect = window.innerWidth / window.innerHeight; 
+            
+            if (aspect >= 1.0) { 
+                // Landscape
+                camera.fov = 40;
+                targetZ = CAM_LAND_DIST; 
+                targetY = CAM_LAND_Y; 
+                targetRotX = config.landscapeRotX;
+            } else { 
+                // Portrait: FOV 75
+                camera.fov = 75; 
+                // CAMBIO V31: Cálculo trigonométrico exacto para encajar CYLINDER_TARGET_WIDTH
+                targetZ = (CYLINDER_TARGET_WIDTH / 2.0) / (aspect * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2.0)));
+                targetY = CAM_PORT_Y; 
+                targetRotX = config.portraitRotX;
+            } 
+            
+            camera.updateProjectionMatrix(); 
+            
+            targetX = 0.0; 
+            
+            if (isVRMode) { targetZ = Z_VR; targetY = 0; targetX = 0; targetRotX = 0; } 
+            else if (isZoomed) { 
+                targetZ = Z_ZOOM; 
+                targetY = (aspect >= 1.0) ? CAM_LAND_Y : CAM_PORT_Y;
+                targetRotX = (aspect >= 1.0) ? config.landscapeRotX : config.portraitRotX;
+                targetX = 0; 
+            } 
+        }
 
         function spinMachine() {
             if (machineIsSpinning || isButtonDisabled) return;
             machineIsSpinning = true; isButtonDisabled = true; isZoomed = false;
             adjustCameraTarget(); resetCoins();
+            
             resultText.classList.remove('show');
+            if (textMesh3D) {
+                scene.remove(textMesh3D);
+                textMesh3D = null;
+            }
+
             if(buttonAction) { buttonAction.reset(); buttonAction.play(); }
             isLightFlashing = true; setTimeout(() => isLightFlashing = false, 200);
             spinCounter++; const forceWin = (spinCounter % 3 === 0);
@@ -406,16 +472,23 @@
         function checkResults() {
              const results = reels.map(r => { let ang = r.rotation.x % (Math.PI*2); if(ang < 0) ang += Math.PI*2; return Math.round(ang / ANGLE_STEP) % NUM_ITEMS_POR_RUEDA; });
              const names = results.map(i => NOMBRES_SIMBOLOS[(NUM_ITEMS_POR_RUEDA - i) % NUM_ITEMS_POR_RUEDA]);
-             resultText.innerText = names.join(" - "); resultText.classList.add('show');
+             
              if(names[0] === names[1] && names[1] === names[2]) {
-                 resultText.innerText += " ¡PREMIO!"; isButtonDisabled = true; isRewardActive = true;
+                 // CAMBIO V31: Texto actualizado
+                 show3DResult("HAS GANADO!!");
+                 
+                 isButtonDisabled = true; isRewardActive = true;
                  winAnimState.active = true; winAnimState.startTime = clock.getElapsedTime();
-             } else { isButtonDisabled = false; }
+             } else { 
+                 resultText.innerText = names.join(" - "); 
+                 resultText.classList.add('show');
+                 isButtonDisabled = false; 
+             }
         }
 
         let isHovering = false;
         function onPointerMove(e) { pointer.x = (e.clientX / window.innerWidth) * 2 - 1; pointer.y = - (e.clientY / window.innerHeight) * 2 + 1; if (!isButtonDisabled && (spinGroup || structureGroup)) { raycaster.setFromCamera(pointer, activeCamera); let hit = false; if (spinGroup && raycaster.intersectObject(spinGroup, true).length > 0) hit = true; else if (structureGroup && raycaster.intersectObject(structureGroup, true).length > 0) hit = true; isHovering = hit; document.body.style.cursor = hit ? 'pointer' : 'default'; } else { isHovering = false; document.body.style.cursor = 'default'; } }
-        function onPointerDown(e) { if (e.target.tagName === 'BUTTON') return; if (e.target.closest('.lil-gui')) return; if (isButtonDisabled) return; pointer.x = (e.clientX / window.innerWidth) * 2 - 1; pointer.y = - (e.clientY / window.innerHeight) * 2 + 1; raycaster.setFromCamera(pointer, activeCamera); let hit = false; if (spinGroup && raycaster.intersectObject(spinGroup, true).length > 0) hit = true; if (!hit && structureGroup && raycaster.intersectObject(structureGroup, true).length > 0) hit = true; if (hit) spinMachine(); }
+        function onPointerDown(e) { if (e.target.tagName === 'BUTTON') return; if (isButtonDisabled) return; pointer.x = (e.clientX / window.innerWidth) * 2 - 1; pointer.y = - (e.clientY / window.innerHeight) * 2 + 1; raycaster.setFromCamera(pointer, activeCamera); let hit = false; if (spinGroup && raycaster.intersectObject(spinGroup, true).length > 0) hit = true; if (!hit && structureGroup && raycaster.intersectObject(structureGroup, true).length > 0) hit = true; if (hit) spinMachine(); }
         function spawnCoins() { for(let i=0; i < COIN_COUNT; i++) { const data = coinsData[i]; data.active = true; data.position.set((Math.random() - 0.5) * COIN_SPREAD * 2, -8.0, 12.0 + (Math.random() * 4.0)); data.velocity.set((Math.random() - 0.5) * 10.0, COIN_BLAST_FORCE + (Math.random() * 10), (Math.random() - 0.5) * 5.0); data.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI); } }
         function resetCoins() { if (!coinInstancedMesh) return; for(let i=0; i < COIN_COUNT; i++) { coinsData[i].active = false; dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); } coinInstancedMesh.instanceMatrix.needsUpdate = true; }
         function updateCoins(delta) { if (!coinInstancedMesh) return; let activeCount = 0; for(let i=0; i < COIN_COUNT; i++) { const data = coinsData[i]; if (data.active) { data.velocity.y -= COIN_GRAVITY * delta; data.position.addScaledVector(data.velocity, delta); data.rotation.x += 5 * delta; dummy.position.copy(data.position); dummy.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z); dummy.scale.set(COIN_SCALE, COIN_SCALE, COIN_SCALE); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); if (data.position.y < -50) { data.active = false; dummy.scale.set(0,0,0); dummy.updateMatrix(); coinInstancedMesh.setMatrixAt(i, dummy.matrix); } else activeCount++; } } if (activeCount > 0) coinInstancedMesh.instanceMatrix.needsUpdate = true; }
@@ -436,7 +509,7 @@
             });
             if(allIdle && machineIsSpinning) { machineIsSpinning = false; checkResults(); }
 
-            // --- LÓGICA DE ILUMINACIÓN ---
+            // --- LÓGICA DE ILUMINACIÓN AVANZADA ---
             let targetBtnInt = 0; let targetLightInt = 0;
             let targetSun = config.sunIntensity; let targetFill = config.fillIntensity;
 
@@ -471,20 +544,23 @@
             if (spinButtonMesh && spinButtonMesh.material) spinButtonMesh.material.emissiveIntensity += (targetBtnInt - spinButtonMesh.material.emissiveIntensity) * 0.2;
             if (pointLight) { pointLight.intensity += (targetLightInt - pointLight.intensity) * 0.2; pointLight.distance = 134; }
 
-            // --- CÁMARA ---
+            // --- CÁMARA Y ANIMACIÓN DE REBOTE ---
             let currentTargetZ = targetZ;
-            let currentTargetY = config.camPosY; // Y fijo en 0.9 (Manual)
+            let currentTargetY = targetY; // Usamos el targetY calculado
             let cameraInterpolationSpeed = 0.05;
 
-            // Rotación Manual Fija
-            activeCamera.rotation.set(config.camRotX, config.camRotY, config.camRotZ);
+            // Rotación Fija Dinámica
+            activeCamera.rotation.set(targetRotX, config.camRotY, config.camRotZ);
 
             if (winAnimState.active && !isVRMode) {
                 const elapsed = clock.getElapsedTime() - winAnimState.startTime;
                 let t = elapsed / winAnimState.duration; 
                 if (t >= 1.0) {
                     winAnimState.active = false; spawnCoins(); 
-                    setTimeout(() => { isButtonDisabled = false; isRewardActive = false; }, 2500);
+                    setTimeout(() => { 
+                        isButtonDisabled = false; isRewardActive = false;
+                        if (textMesh3D) { scene.remove(textMesh3D); textMesh3D = null; }
+                    }, 2500);
                 } else {
                     const bounceFactor = Math.sin(t * Math.PI); 
                     currentTargetZ = THREE.MathUtils.lerp(targetZ, Z_ZOOM, bounceFactor);

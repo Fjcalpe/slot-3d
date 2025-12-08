@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Slot Pro: V20 (Fixed & Polished)</title>
+    <title>Slot Pro: Interactive 3D</title>
     <style>
         body { 
             margin: 0; padding: 0; overflow: hidden; 
@@ -79,8 +79,7 @@
         {
             "imports": {
                 "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-                "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
             }
         }
     </script>
@@ -94,8 +93,6 @@
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
         import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-        
-        import GUI from 'lil-gui';
 
         // =====================================================================
         // 1. CONFIGURACIÓN
@@ -106,11 +103,10 @@
         const MACHINE_WIDTH_FACTOR = 18.5; 
         
         const CAM_LAND_DIST = 25.0;  
-        // CAMBIO V20: Usamos valores manuales
-        const CAM_LAND_Y = 0.9; 
-        const CAM_LAND_X = 0.0;     
+        // Valores fijos finales
+        const CAM_LAND_Y = 0.0;     
         
-        const CAM_PORT_Y = -3.0; // Mantenemos portrait aparte
+        const CAM_PORT_Y = -3.0; 
         const CAM_PORT_X = 0.0;
         
         const Z_VR = 42; 
@@ -125,20 +121,26 @@
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb'];
         const NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Noel', 'Sirena', 'Xic', 'Goku'];
         
-        // FIX: Asegurar que todas las propiedades existen para el GUI
-        const debugParams = {
+        // --- CONFIGURACIÓN MAESTRA (Fijada desde V20) ---
+        const config = {
+            // Iluminación
             sunIntensity: 3.52, sunPosY: 30, sunPosZ: 20,
             fillIntensity: 2.62, fillColor: '#fffbca',
             
+            // Botón
             btnHoverEmissive: 0.6, 
             lightHoverInt: 300, 
             lightClickInt: 2889, 
+            btnIdleEmissive: 0.3, 
+            lightIdleInt: 50,
             
-            btnIdleEmissive: 0.3, lightIdleInt: 50,
-            
-            aoEnabled: true, aoRadius: 3.392, aoMinDist: 0.001841, aoMaxDist: 0.09686,
+            // AO
+            aoEnabled: true, 
+            aoRadius: 3.392, 
+            aoMinDist: 0.001841, 
+            aoMaxDist: 0.09686,
 
-            // CAMARA V20
+            // Cámara
             camPosY: 0.9,
             camRotX: -0.1,
             camRotY: 0.0,
@@ -183,9 +185,9 @@
             const renderPass = new RenderPass(scene, activeCamera);
             composer.addPass(renderPass);
             ssaoPass = new SSAOPass(scene, activeCamera, window.innerWidth, window.innerHeight);
-            ssaoPass.kernelRadius = debugParams.aoRadius;
-            ssaoPass.minDistance = debugParams.aoMinDist;
-            ssaoPass.maxDistance = debugParams.aoMaxDist;
+            ssaoPass.kernelRadius = config.aoRadius;
+            ssaoPass.minDistance = config.aoMinDist;
+            ssaoPass.maxDistance = config.aoMaxDist;
             ssaoPass.output = SSAOPass.OUTPUT.Default; 
             composer.addPass(ssaoPass);
             const outputPass = new OutputPass();
@@ -260,7 +262,6 @@
 
                 forceShadows(scene);
                 initPostProcessing();
-                setupGUI();
 
                 loadingText.style.display = 'none';
                 window.addEventListener('resize', onWindowResize);
@@ -289,37 +290,7 @@
             });
         }
 
-        function setupGUI() {
-            const gui = new GUI({ title: 'Visual Tuning v20' });
-            
-            const folderCam = gui.addFolder('🎥 Calibración de Cámara');
-            folderCam.add(debugParams, 'camPosY', -10, 10).name('Posición Y (Vertical)');
-            folderCam.add(debugParams, 'camRotX', -Math.PI, Math.PI).name('Rotación X (Pitch)');
-            folderCam.add(debugParams, 'camRotY', -Math.PI, Math.PI).name('Rotación Y (Yaw)');
-            folderCam.add(debugParams, 'camRotZ', -Math.PI, Math.PI).name('Rotación Z (Roll)');
-
-            const folderSun = gui.addFolder('Luz Principal (Sol)');
-            folderSun.add(debugParams, 'sunIntensity', 0, 20).name('Intensidad Base');
-            folderSun.add(debugParams, 'sunPosY', -50, 100).name('Posición Y').onChange(updateSunPos);
-            folderSun.add(debugParams, 'sunPosZ', -50, 100).name('Posición Z').onChange(updateSunPos);
-            
-            const folderFill = gui.addFolder('Luz de Relleno (Abajo Dcha)');
-            folderFill.add(debugParams, 'fillIntensity', 0, 10).name('Intensidad');
-            folderFill.addColor(debugParams, 'fillColor').name('Color').onChange(v => { if(fillLight) fillLight.color.set(v); });
-            
-            const folderBtn = gui.addFolder('Interacción Botón');
-            folderBtn.add(debugParams, 'btnHoverEmissive', 0, 5).name('Brillo Hover (Mat)');
-            folderBtn.add(debugParams, 'lightHoverInt', 0, 1000).name('Luz Hover (Int)');
-            folderBtn.add(debugParams, 'lightClickInt', 0, 3000).name('Luz Click (Flash)');
-            
-            const folderAO = gui.addFolder('Ambient Occlusion (Sombras)');
-            folderAO.add(debugParams, 'aoEnabled').name('Activar AO');
-            folderAO.add(debugParams, 'aoRadius', 0, 64).name('Radio (Radius)').onChange(v => { if(ssaoPass) ssaoPass.kernelRadius = v; });
-            folderAO.add(debugParams, 'aoMinDist', 0.0001, 0.01).name('Min Dist (Inicio)').onChange(v => { if(ssaoPass) ssaoPass.minDistance = v; });
-            folderAO.add(debugParams, 'aoMaxDist', 0.01, 0.3).name('Max Dist (Corte)').onChange(v => { if(ssaoPass) ssaoPass.maxDistance = v; });
-        }
-
-        function updateSunPos() { if(sunLight) sunLight.position.set(-10, debugParams.sunPosY, debugParams.sunPosZ); }
+        function updateSunPos() { if(sunLight) sunLight.position.set(-10, config.sunPosY, config.sunPosZ); }
         function requestFullscreen() { const docEl = document.documentElement; const requestMethod = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen; if (requestMethod) { requestMethod.call(docEl).then(() => { overlay.style.display = 'none'; checkOrientation(); }).catch(e => { overlay.style.display = 'none'; }); } }
         function toggleFullscreen() { if (!document.fullscreenElement && !document.webkitFullscreenElement) { requestFullscreen(); } else { if (document.exitFullscreen) document.exitFullscreen(); else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); } }
 
@@ -369,8 +340,8 @@
 
         function createLights() {
             const amb = new THREE.AmbientLight(0xffffff, 0.6); scene.add(amb);
-            sunLight = new THREE.DirectionalLight(0xfffee0, debugParams.sunIntensity);
-            sunLight.position.set(-10, debugParams.sunPosY, debugParams.sunPosZ);
+            sunLight = new THREE.DirectionalLight(0xfffee0, config.sunIntensity);
+            sunLight.position.set(-10, config.sunPosY, config.sunPosZ);
             sunLight.castShadow = true; 
             sunLight.target.position.set(0, 0, 0); scene.add(sunLight.target);
             sunLight.shadow.mapSize.set(1024, 1024);
@@ -378,7 +349,7 @@
             sunLight.shadow.bias = -0.0005; sunLight.shadow.normalBias = 0.02; scene.add(sunLight);
 
             const fillPivot = new THREE.Object3D(); fillPivot.rotation.set(-3.06, -1.36, -2.31); scene.add(fillPivot);
-            fillLight = new THREE.DirectionalLight(debugParams.fillColor, debugParams.fillIntensity);
+            fillLight = new THREE.DirectionalLight(config.fillColor, config.fillIntensity);
             fillLight.position.set(-8.10, -4.57, -7.28); fillPivot.add(fillLight);
 
             pointLight = new THREE.PointLight(0xffaa00, 0, 100);
@@ -465,9 +436,9 @@
             });
             if(allIdle && machineIsSpinning) { machineIsSpinning = false; checkResults(); }
 
-            // --- LÓGICA DE ILUMINACIÓN AVANZADA ---
+            // --- LÓGICA DE ILUMINACIÓN ---
             let targetBtnInt = 0; let targetLightInt = 0;
-            let targetSun = debugParams.sunIntensity; let targetFill = debugParams.fillIntensity;
+            let targetSun = config.sunIntensity; let targetFill = config.fillIntensity;
 
             const effectiveHover = (isHovering && !isButtonDisabled && !isRewardActive);
 
@@ -477,36 +448,36 @@
             }
 
             if (isRewardActive) {
-                targetSun = debugParams.sunIntensity; targetFill = debugParams.fillIntensity;
+                targetSun = config.sunIntensity; targetFill = config.fillIntensity;
             } else if (effectiveHover) {
-                targetSun = debugParams.sunIntensity * 0.5; targetFill = 0.0; 
+                targetSun = config.sunIntensity * 0.5; targetFill = 0.0; 
             }
             
             if (sunLight) sunLight.intensity += (targetSun - sunLight.intensity) * 0.1;
             if (fillLight) fillLight.intensity += (targetFill - fillLight.intensity) * 0.1;
 
             if (isLightFlashing) {
-                targetBtnInt = CLICK_BTN_EMISSIVE; targetLightInt = debugParams.lightClickInt; if(pointLight) pointLight.color.setHex(0xFFFFFF);
+                targetBtnInt = CLICK_BTN_EMISSIVE; targetLightInt = config.lightClickInt; if(pointLight) pointLight.color.setHex(0xFFFFFF);
             } else if (isButtonDisabled && isRewardActive) {
                 targetBtnInt = 0.0; targetLightInt = 0; if(pointLight) pointLight.color.setHex(0xFFAA00); 
             } else if (isButtonDisabled) {
                 targetBtnInt = 0.0; targetLightInt = 0; if(pointLight) pointLight.color.setHex(0xFFAA00);
             } else {
-                targetBtnInt = effectiveHover ? debugParams.btnHoverEmissive : debugParams.btnIdleEmissive;
-                targetLightInt = effectiveHover ? debugParams.lightHoverInt : debugParams.lightIdleInt;
+                targetBtnInt = effectiveHover ? config.btnHoverEmissive : config.btnIdleEmissive;
+                targetLightInt = effectiveHover ? config.lightHoverInt : config.lightIdleInt;
                 if(pointLight) pointLight.color.setHex(0xFFAA00);
             }
 
             if (spinButtonMesh && spinButtonMesh.material) spinButtonMesh.material.emissiveIntensity += (targetBtnInt - spinButtonMesh.material.emissiveIntensity) * 0.2;
             if (pointLight) { pointLight.intensity += (targetLightInt - pointLight.intensity) * 0.2; pointLight.distance = 134; }
 
-            // --- CÁMARA Y ANIMACIÓN DE REBOTE (V20: CONTROL MANUAL) ---
+            // --- CÁMARA ---
             let currentTargetZ = targetZ;
-            let currentTargetY = debugParams.camPosY; // Y controlado por GUI (default 0.9)
+            let currentTargetY = config.camPosY; // Y fijo en 0.9 (Manual)
             let cameraInterpolationSpeed = 0.05;
 
-            // Rotación manual desde GUI
-            activeCamera.rotation.set(debugParams.camRotX, debugParams.camRotY, debugParams.camRotZ);
+            // Rotación Manual Fija
+            activeCamera.rotation.set(config.camRotX, config.camRotY, config.camRotZ);
 
             if (winAnimState.active && !isVRMode) {
                 const elapsed = clock.getElapsedTime() - winAnimState.startTime;
@@ -526,7 +497,7 @@
             activeCamera.position.y += (currentTargetY - activeCamera.position.y) * cameraInterpolationSpeed * timeScale;
 
             if(isVRMode) effectVR.render(scene, activeCamera);
-            else if (debugParams.aoEnabled && composer) composer.render();
+            else if (config.aoEnabled && composer) composer.render();
             else renderer.render(scene, activeCamera);
         }
     </script>

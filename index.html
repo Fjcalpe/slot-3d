@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Slot Pro: v84 (Opaque Layers + Fair Play)</title>
+    <title>Slot Pro: Final v71 (Shader Pre-compile)</title>
     <style>
         body { 
             margin: 0; padding: 0; overflow: hidden; 
@@ -105,19 +105,15 @@
         const CAM_LAND_DIST = 25.0;  
         const CAM_LAND_Y = 0.9;     
         const CAM_PORT_Y = 0.0; 
+        
         const Z_VR = 42; 
         const Z_ZOOM = 14; 
         const TEXT_Z_POS = 15.0; 
 
-        // CONFIGURACIÓN DE CAPAS
         const NUM_CARRETES = 3;
-        const NUM_CAPAS = 3; // Capa 0, 1, 2
-        
         const SEPARACION_CARRETES = 4.5;
         const NUM_ITEMS_POR_RUEDA = 8;
-        const RADIO_ORBITA_BASE = 6.0; 
-        const SEPARACION_CAPAS = 2.5; // AUMENTADO PARA MÁS SEPARACIÓN
-        
+        const RADIO_ORBITA_SIMBOLOS = 6.0;
         const ANGLE_STEP = (Math.PI * 2) / NUM_ITEMS_POR_RUEDA;
         
         const ARCHIVOS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb'];
@@ -193,10 +189,7 @@
         const textureLoader = new THREE.TextureLoader();
         const clock = new THREE.Clock();
         const reels = [];
-        
-        // Array simple para todos los carretes (9 total)
-        // 0-2: Capa Base, 3-5: Capa Media, 6-8: Capa Externa
-        const reelStates = Array(NUM_CARRETES * NUM_CAPAS).fill(null).map(() => ({ mode: 'IDLE', velocity: 0, targetAngle: 0 }));
+        const reelStates = Array(NUM_CARRETES).fill(null).map(() => ({ mode: 'IDLE', velocity: 0, targetAngle: 0 }));
         const symbolMasters = {};
         
         const coinsData = [];
@@ -264,15 +257,10 @@
 
                 createParticleSystems(sparkleTex);
 
-                loadingText.innerText = "Construyendo Slot (3 Capas)...";
+                loadingText.innerText = "Construyendo Slot...";
+                for(let r = 0; r < NUM_CARRETES; r++) crearHilera(r);
                 
-                // CREAR 3 CAPAS
-                for(let capa = 0; capa < NUM_CAPAS; capa++) {
-                    for(let r = 0; r < NUM_CARRETES; r++) {
-                        crearHilera(r, capa);
-                    }
-                }
-                
+                // Pre-cargar el objeto
                 buildResultContainer(); 
 
                 for(let i=0; i<COIN_COUNT; i++) {
@@ -304,13 +292,17 @@
 
                 initPostProcessing();
 
+                // MODIFICACION V71: FORZAR COMPILACION DE SHADERS
                 loadingText.innerText = "Optimizando Gráficos...";
+                // Hacemos el grupo visible pero lo ponemos detrás de la cámara para que no se vea
                 if(resultGroup) {
                     resultGroup.visible = true;
-                    resultGroup.position.set(0, 0, 500); 
+                    resultGroup.position.set(0, 0, 500); // Lejos/Detrás
                 }
+                // Forzamos al renderer a procesar la escena
                 renderer.compile(scene, camera);
                 
+                // Volvemos a ocultar y resetear posición
                 if(resultGroup) {
                     resultGroup.visible = false;
                     resultGroup.position.set(0, CAM_LAND_Y, 40);
@@ -369,14 +361,10 @@
             resultGroup = new THREE.Group();
 
             const master = symbolMasters['noel.glb'];
-            // Fallback si no existe noel.glb
             if(master) {
                 resultModel = master.clone();
                 resultModel.scale.set(1, 1, 1);
                 resultGroup.add(resultModel);
-            } else {
-                const mesh = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color: 0xffd700}));
-                resultGroup.add(mesh);
             }
 
             shineLight = new THREE.PointLight(0xffffff, 150, 15);
@@ -480,38 +468,22 @@
             }
         }
 
-        // MODIFICADO: Acepta capa como parametro
-        function crearHilera(index, capaIndex) {
+        function crearHilera(index) {
             const reelGroup = new THREE.Group();
             reelGroup.position.x = (index * SEPARACION_CARRETES) - ((NUM_CARRETES - 1) * SEPARACION_CARRETES / 2);
             scene.add(reelGroup); reels.push(reelGroup);
-            
-            // Radio Aumentado para separación visual
-            const radioActual = RADIO_ORBITA_BASE + (capaIndex * SEPARACION_CAPAS);
-
             for (let i = 0; i < NUM_ITEMS_POR_RUEDA; i++) {
                 const glbName = ARCHIVOS_GLB[i % ARCHIVOS_GLB.length]; 
-                
-                // Fallback de seguridad si no existe el simbolo
-                let master = symbolMasters[glbName];
-                if (!master) {
-                    const m = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color:0xff0000}));
-                    master = new THREE.Group(); master.add(m);
-                }
-
-                const model = master.clone();
+                const model = symbolMasters[glbName].clone();
                 model.traverse(child => {
                     if (child.isMesh) {
                         child.material = child.material.clone();
-                        // MODIFICACION: TODAS LAS CAPAS OPACAS (sin transparencia)
                         child.material.transparent = false;
-                        child.material.opacity = 1.0; 
                         child.userData.originalColor = child.material.color.clone();
                     }
                 });
-                
                 const pivot = new THREE.Group(); pivot.rotation.x = (i * ANGLE_STEP);
-                model.position.set(0, 0, radioActual); pivot.add(model); reelGroup.add(pivot);
+                model.position.set(0, 0, RADIO_ORBITA_SIMBOLOS); pivot.add(model); reelGroup.add(pivot);
             }
         }
 
@@ -575,36 +547,22 @@
             if(buttonAction) { buttonAction.reset(); buttonAction.play(); }
             isLightFlashing = true; setTimeout(() => isLightFlashing = false, 200);
             spinCounter++; 
-            
-            // MODIFICADO: NO FORCE WIN
-            const forceWin = false; 
-            
+            const forceWin = true; 
             reelStates.forEach(s => { s.mode = 'SPINNING'; s.velocity = 0; });
             
-            // Paramos todos los carretes (9 en total)
-            const TOTAL_REELS = NUM_CARRETES * NUM_CAPAS;
-            
-            for (let i = 0; i < TOTAL_REELS; i++) setTimeout(() => {
+            for (let i = 0; i < NUM_CARRETES; i++) setTimeout(() => {
                 const state = reelStates[i]; state.mode = 'STOPPING';
-                // Calculo un poco chapucero del angulo actual pq ahora 'reels' tiene 9 items
-                const currentRot = reels[i].rotation.x; 
-                const nextRound = Math.ceil(currentRot / (Math.PI*2)) + 2 + (i % 3);
+                const currentRot = reels[i].rotation.x; const nextRound = Math.ceil(currentRot / (Math.PI*2)) + 2 + i;
                 let randIndex; if (forceWin) { randIndex = 0; } else { randIndex = Math.floor(Math.random() * NUM_ITEMS_POR_RUEDA); }
                 state.targetAngle = (nextRound * Math.PI * 2) + (randIndex * ANGLE_STEP);
-            }, 200 + ((i % 3) * 600)); 
+            }, 200 + (i * 600)); 
         }
 
         function checkResults() {
-             // Solo chequeamos la capa 0 (indices 0, 1, 2 del array reels)
-             const results = [reels[0], reels[1], reels[2]].map(r => { let ang = r.rotation.x % (Math.PI*2); if(ang < 0) ang += Math.PI*2; return Math.round(ang / ANGLE_STEP) % NUM_ITEMS_POR_RUEDA; });
+             const results = reels.map(r => { let ang = r.rotation.x % (Math.PI*2); if(ang < 0) ang += Math.PI*2; return Math.round(ang / ANGLE_STEP) % NUM_ITEMS_POR_RUEDA; });
              const names = results.map(i => NOMBRES_SIMBOLOS[(NUM_ITEMS_POR_RUEDA - i) % NUM_ITEMS_POR_RUEDA]);
              
              if(names[0] === names[1] && names[1] === names[2]) {
-                 // Ganar
-                 if(resultGroup) {
-                     resultGroup.visible = true;
-                     resultGroup.position.set(0, activeCamera.position.y, activeCamera.position.z + 20);
-                 }
                  isButtonDisabled = true; isRewardActive = true;
                  
                  winSequence.active = true; 
@@ -688,10 +646,12 @@
             
             const elapsed = time - winSequence.startTime;
 
+            // 1. Control de Cámara
             if (elapsed < 1.5) {
                 // ...
             }
 
+            // 2. Control de Modelo
             if (elapsed >= 1.5) {
                 if (!resultGroup.visible) {
                     resultGroup.visible = true;
@@ -702,6 +662,7 @@
                 const baseZ = TEXT_Z_POS;
                 const startZ = activeCamera.position.z + 20;
 
+                // Fases
                 if (textTime < 1.0) {
                      const p = textTime / 1.0;
                      const c1 = 1.70158; const c3 = c1 + 1;
@@ -717,6 +678,7 @@
                      resultGroup.position.z = (baseZ + 2.0) + accel;
                 }
 
+                // Luz
                 if (shineLight && textTime < 2.5) {
                      const sweep = Math.sin(time * 3.0) * 10.0;
                      shineLight.position.set(sweep, 0, 5.0);
@@ -725,6 +687,7 @@
                 }
             }
             
+            // Reset
             if (elapsed > 5.0) {
                 winSequence.active = false;
                 isButtonDisabled = false; isRewardActive = false;
@@ -734,7 +697,6 @@
         }
 
         function updateSymbolVisibility() {
-            // MODIFICADO: Bucle simple para todos los carretes en 'reels'
             reels.forEach((reelGroup) => {
                 const reelAngle = reelGroup.rotation.x;
                 reelGroup.children.forEach((pivotGroup) => {
@@ -857,34 +819,16 @@
             const timeScale = delta * 60;
 
             if(buttonMixer) buttonMixer.update(delta);
-            updateSequence(time); 
+            updateSequence(time); // Control maestro
             updateParticles(delta, time);
             updateSymbolVisibility();
 
             let allIdle = true;
-            
-            // ANIMAR TODAS LAS CAPAS A LA VEZ
-            // NOTA: Como 'reels' ahora tiene 9 items (3 capas x 3 carretes), los iteramos todos.
-            // Para test visual, esto hace que todos giren y paren.
             reels.forEach((r, i) => {
                 const s = reelStates[i];
-                if(s.mode === 'SPINNING') { 
-                    allIdle = false; 
-                    if(s.velocity < 0.5) s.velocity += 0.02 * timeScale; 
-                    r.rotation.x += s.velocity * timeScale; 
-                } else if(s.mode === 'STOPPING') { 
-                    allIdle = false; 
-                    const diff = s.targetAngle - r.rotation.x; 
-                    s.velocity += diff * 0.25 * timeScale; 
-                    s.velocity *= Math.pow(0.80, timeScale); 
-                    r.rotation.x += s.velocity * timeScale; 
-                    if(Math.abs(diff) < 0.005 && Math.abs(s.velocity) < 0.005) { 
-                        r.rotation.x = s.targetAngle; 
-                        s.mode = 'IDLE'; 
-                    } 
-                }
+                if(s.mode === 'SPINNING') { allIdle = false; if(s.velocity < 0.5) s.velocity += 0.02 * timeScale; r.rotation.x += s.velocity * timeScale; }
+                else if(s.mode === 'STOPPING') { allIdle = false; const diff = s.targetAngle - r.rotation.x; s.velocity += diff * 0.25 * timeScale; s.velocity *= Math.pow(0.80, timeScale); r.rotation.x += s.velocity * timeScale; if(Math.abs(diff) < 0.005 && Math.abs(s.velocity) < 0.005) { r.rotation.x = s.targetAngle; s.mode = 'IDLE'; } }
             });
-            
             if(allIdle && machineIsSpinning) { machineIsSpinning = false; checkResults(); }
 
             let targetBtnInt = 0; let targetLightInt = 0;

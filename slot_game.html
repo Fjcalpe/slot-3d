@@ -49,7 +49,8 @@
         .icon-btn {
             position: absolute; z-index: 100;
             background: rgba(0,0,0,0.5); border: 2px solid #fff;
-            color: #fff; border-radius: 50%; width: 50px; height: 50px;
+            color: #fff; border-radius: 50%; w
+            width: 50px; height: 50px;
             font-size: 24px; cursor: pointer; display: flex;
             align-items: center; justify-content: center; transition: transform 0.1s;
         }
@@ -532,12 +533,9 @@
                         this.targetY = this.CAM_PORT_Y; this.targetRotX = this.config.portraitRotX;
                     } 
                     if (this.isVRMode) { this.targetZ = this.Z_VR; this.targetY = 0; this.targetX = 0; this.targetRotX = 0; } 
-                    else if (this.isZoomed || this.winSequence.active) { 
-                        this.targetZ = this.Z_ZOOM; 
-                        this.targetY = (aspect >= 1.0) ? this.CAM_LAND_Y : this.CAM_PORT_Y;
-                        this.targetRotX = (aspect >= 1.0) ? this.config.landscapeRotX : this.config.portraitRotX;
-                        this.targetX = 0; 
-                    } 
+                    // [MODIFICACIÓN V7] Eliminamos la lógica de zoom para que el target SIEMPRE sea la posición de juego regular durante la celebración.
+                    // La animación del zoom se maneja directamente en 'animate'.
+                    // else if (this.isZoomed || this.winSequence.active) { ... } 
                 }
                 this.camera.updateProjectionMatrix(); 
             }
@@ -646,10 +644,12 @@
                 this.winSequence.active = true; 
                 this.winSequence.startTime = this.clock.getElapsedTime(); 
                 this.winSequence.fxSpawned = false; // Reset the flag
+                
+                // Ajustar target de cámara a la posición de juego regular (CAM_LAND_DIST), sin forzar Z_ZOOM
                 this.adjustCameraTarget(); 
             }
 
-            // --- LÓGICA MODO TORRES (INTACTA) ---
+            // --- LÓGICA MODO TORRES (MODIFICADA EN V9) ---
             startTorresMode() {
                 this.isTorresActive = true; this.isButtonDisabled = true;
                 this.torresState.totalSpins = 6; this.torresState.spinsLeft = this.torresState.totalSpins; 
@@ -679,7 +679,7 @@
 
             spinTorresLoop() {
                 this.torresCountSpan.innerText = this.torresState.spinsLeft;
-                if (this.torresState.spinsLeft <= 0 || this.torresState.currentLayer > 2) { this.endTorresMode(); return; }
+                if (this.torresState.spinsLeft <= 0 && this.torresState.currentLayer > 2) { this.endTorresMode(); return; }
 
                 const layerIdx = this.torresState.currentLayer;
                 this.toggleLayerVisibility(layerIdx, true);
@@ -767,14 +767,22 @@
                 if (layerIdx === 1) { this.torresState.layer1Symbols = [...currentSymbols]; }
                 
                 const lockedCount = this.torresState.lockedReels[layerIdx].filter(Boolean).length;
-                let halfSpinsUsed = (this.torresState.spinsLeft <= this.torresState.spinThreshold);
-
+                
+                // [MODIFICACIÓN V9] Ajustamos la lógica de avance/escape.
                 if (layerIdx === 1) {
-                    if (lockedCount === 3 || halfSpinsUsed) {
-                          if (lockedCount === 0) { this.endTorresMode(); return; }
-                          this.torresState.currentLayer = 2; 
+                    // Si Capa 1 está completa, o si no quedan spins, intentamos avanzar a la Capa 2.
+                    if (lockedCount === 3 || this.torresState.spinsLeft <= 0) {
+                          if (lockedCount === 0) { this.endTorresMode(); return; } // Si no bloqueó nada y no quedan spins, salimos
+                          this.torresState.currentLayer = 2; // Avanzamos a Capa 2
                     }
                 }
+                
+                // Si estamos en Capa 2 y no quedan spins, terminamos el modo.
+                if (layerIdx === 2 && this.torresState.spinsLeft <= 0) {
+                     this.endTorresMode(); 
+                     return;
+                }
+
                 setTimeout(this.spinTorresLoop.bind(this), 500);
             }
 
@@ -882,7 +890,7 @@
                 
                 const elapsed = time - this.winSequence.startTime;
                 
-                // === FASE 1: ZOOM IN/OUT (0s a 1.5s) ---
+                // === FASE 1: Preparación (0s a 1.5s) ---
                 if (elapsed < 1.5) {
                     this.resultText.classList.remove('show');
                     if (this.resultGroup) { this.resultGroup.visible = false; }
@@ -940,11 +948,9 @@
                     this.resultText.classList.remove('show');
                     this.resetCoinsAndFX();
                     
-                    // CORRECCIÓN CÁMARA: ANCLAJE INSTANTÁNEO
-                    const aspect = window.innerWidth / window.innerHeight;
-                    this.activeCamera.position.z = (aspect >= 1.0) ? this.CAM_LAND_DIST : (this.CYLINDER_TARGET_WIDTH / 2.0) / (aspect * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2.0)));
-                    this.activeCamera.position.y = (aspect >= 1.0) ? this.CAM_LAND_Y : this.CAM_PORT_Y;
-
+                    // CORRECCIÓN CÁMARA: ELIMINAMOS TELETRANSPORTE FINAL (V8)
+                    // La cámara se queda en la posición en la que quedó anclada la FASE 2.
+                    
                     // Desactivamos el flag aquí para que la cámara no use más la lógica winSequence en el próximo frame
                     this.winSequence.active = false;
                 }
@@ -1155,23 +1161,47 @@
                 if (this.winSequence.active && !this.isTorresActive && !this.isVRMode) {
                     const elapsed = time - this.winSequence.startTime;
                     
+                    // FASE 1: ZOOM IN/OUT (0s a 1.5s) - MOVIMIENTO DE CÁMARA
                     if (elapsed < 1.5) {
-                        // FASE 1: ZOOM IN/OUT (1.5s) - MOVIMIENTO DE CÁMARA
                         const t = elapsed / 1.5;
                         const wave = (1.0 - Math.cos(t * Math.PI * 2)) * 0.5;
-                        currentTargetZ = THREE.MathUtils.lerp(this.CAM_LAND_DIST, this.Z_ZOOM, wave); 
+                        // Usamos this.targetZ (posición regular) como base.
+                        currentTargetZ = THREE.MathUtils.lerp(this.targetZ, this.Z_ZOOM, wave); 
+                        currentTargetY = this.targetY; 
                         cameraInterpolationSpeed = 0.1; 
+                    } 
+                    // FASE 2: CÁMARA INMÓVIL TOTALMENTE FIJA (1.5s a 3.5s)
+                    else if (elapsed >= 1.5 && elapsed < 3.5) {
+                        
+                        // **** CORTOCIRCUITO DE MOVIMIENTO ****
+                        // 1. Forzamos los targets de interpolación a ser la posición actual de la cámara.
+                        currentTargetZ = this.activeCamera.position.z;
+                        currentTargetY = this.activeCamera.position.y;
+                        
+                        // 2. Anulamos la velocidad para garantizar que no haya cálculo de movimiento.
+                        cameraInterpolationSpeed = 0.0; 
+                        
+                        // 3. Forzamos la rotación (targetRotX/Y/Z ahora es la rotación de juego regular)
+                        this.activeCamera.rotation.x = this.targetRotX;
+                        this.activeCamera.rotation.y = this.targetRotY;
+                        this.activeCamera.rotation.z = this.targetRotZ;
+
+                        // **** FIN CORTOCIRCUITO ****
+
                     } else {
-                        // FASE 2: CÁMARA APUNTA A LA POSICIÓN NORMAL, PERO EL CONTROL ES MANUAL
-                        currentTargetZ = this.CAM_LAND_DIST; 
-                        cameraInterpolationSpeed = 0.1; 
+                        // (elapsed >= 3.5)
+                        currentTargetZ = this.targetZ; 
+                        currentTargetY = this.targetY;
                     }
-                    currentTargetY = this.targetY; 
+
                 } else {
+                    // Si no está en secuencia de victoria o ya terminó, usar los targets normales.
                     currentTargetZ = this.targetZ;
                     currentTargetY = this.targetY;
                 }
 
+                // Bloque de Interpolación
+                // NOTA: Si cameraInterpolationSpeed es 0.0 (Fase 2), este bloque no tendrá efecto de movimiento.
                 this.activeCamera.rotation.x += (this.targetRotX - this.activeCamera.rotation.x) * cameraInterpolationSpeed * timeScale;
                 this.activeCamera.rotation.y += (this.targetRotY - this.activeCamera.rotation.y) * cameraInterpolationSpeed * timeScale;
                 this.activeCamera.rotation.z += (this.targetRotZ - this.activeCamera.rotation.z) * cameraInterpolationSpeed * timeScale;

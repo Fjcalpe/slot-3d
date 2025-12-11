@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Slot Pro: Final - Velocidad Lenta & Sombras Corregidas</title>
+    <title>Slot Pro: Final - Sequential Speed Fix</title>
     <style>
         body { 
             margin: 0; padding: 0; overflow: hidden; 
@@ -69,13 +69,40 @@
             position: absolute; top: 10px; left: 10px; color: lime; font-family: monospace; z-index: 500;
             background: rgba(0,0,0,0.5); padding: 5px; pointer-events: none;
         }
+
+        #ui-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 300;
+        }
+
+        .fusion-text {
+            position: absolute;
+            color: #FFF;
+            font-family: 'Arial Black', sans-serif;
+            font-weight: 900;
+            font-size: 4rem;
+            -webkit-text-stroke: 3px black;
+            text-shadow: 0 0 20px #FFD700, 0 0 10px #FFA500;
+            pointer-events: none;
+            transform: translate(-50%, -50%) scale(0.5);
+            opacity: 0;
+            transition: opacity 0.1s, transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .fusion-text.show {
+            opacity: 1;
+            transform: translate(-50%, -150%) scale(1.0); 
+        }
     </style>
 </head>
 <body>
 
     <div id="loading">Cargando Recursos...</div>
-    <div id="debug-cycle">Tirada: 0/4</div>
+    <div id="debug-cycle">Tirada: 0</div>
     <div id="torres-info">MODO TORRES: <span id="torres-count">0</span> SPINS</div>
+    <div id="ui-container"></div>
 
     <button id="vr-btn" class="icon-btn" title="Modo VR">👓</button>
     <button id="fs-manual-btn" class="icon-btn" title="Pantalla Completa">⛶</button>
@@ -104,14 +131,244 @@
         import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
         import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
+        // --- SISTEMA DE PARTÍCULAS ---
+        class LockedParticles {
+            constructor(scene, texture) {
+                this.scene = scene;
+                this.particles = [];
+                this.limit = 1500; 
+                
+                const geo = new THREE.PlaneGeometry(0.8, 0.8); 
+                const mat = new THREE.MeshBasicMaterial({
+                    map: texture,
+                    transparent: true,
+                    opacity: 1,
+                    depthWrite: false,
+                    blending: THREE.AdditiveBlending,
+                    color: 0xFFCC00 
+                });
+                
+                this.mesh = new THREE.InstancedMesh(geo, mat, this.limit);
+                this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+                this.scene.add(this.mesh);
+                
+                this.dummy = new THREE.Object3D();
+                
+                for(let i=0; i<this.limit; i++) {
+                    this.particles.push({
+                        active: false,
+                        pos: new THREE.Vector3(),
+                        vel: new THREE.Vector3(),
+                        life: 0,
+                        maxLife: 1.0,
+                        scale: 1.0
+                    });
+                }
+            }
+
+            spawn(position, count = 1) {
+                let spawned = 0;
+                for(let i=0; i<this.limit; i++) {
+                    if(!this.particles[i].active) {
+                        const p = this.particles[i];
+                        p.active = true;
+                        p.pos.copy(position);
+                        p.pos.x += (Math.random() - 0.5) * 1.0; 
+                        p.pos.y += 1.0 + (Math.random() * 0.5); 
+                        p.pos.z += 2.2; 
+                        p.vel.set((Math.random() - 0.5) * 0.2, 4.0 + Math.random() * 3.0, 0); 
+                        p.life = 0;
+                        p.maxLife = 0.5 + Math.random() * 0.5; 
+                        p.scale = 0.6 + Math.random() * 0.4;
+                        spawned++;
+                        if(spawned >= count) break;
+                    }
+                }
+            }
+
+            update(delta, camera) {
+                let activeCount = 0;
+                for(let i=0; i<this.limit; i++) {
+                    const p = this.particles[i];
+                    if(p.active) {
+                        p.life += delta;
+                        if(p.life >= p.maxLife) {
+                            p.active = false;
+                            this.dummy.scale.set(0,0,0);
+                        } else {
+                            p.pos.addScaledVector(p.vel, delta);
+                            const progress = p.life / p.maxLife;
+                            const size = p.scale * Math.pow(1.0 - progress, 1.5); 
+                            this.dummy.position.copy(p.pos);
+                            this.dummy.quaternion.copy(camera.quaternion);
+                            this.dummy.scale.set(size, size, size);
+                            activeCount++;
+                        }
+                    } else {
+                        this.dummy.scale.set(0,0,0);
+                    }
+                    this.dummy.updateMatrix();
+                    this.mesh.setMatrixAt(i, this.dummy.matrix);
+                }
+                if (activeCount > 0 || this.mesh.count > 0) {
+                     this.mesh.instanceMatrix.needsUpdate = true;
+                }
+            }
+            
+            reset() {
+                 for(let i=0; i<this.limit; i++) { this.particles[i].active = false; }
+                 this.dummy.scale.set(0,0,0);
+                 this.dummy.updateMatrix();
+                 for(let i=0; i<this.limit; i++) { this.mesh.setMatrixAt(i, this.dummy.matrix); }
+                 this.mesh.instanceMatrix.needsUpdate = true;
+            }
+        }
+
+        // --- CLASE EXPLOSIÓN ---
+        class ExplosionMesh {
+            constructor(originalMesh, scene, objectToHide, delay = 0) {
+                this.scene = scene;
+                this.objectToHide = objectToHide; 
+                this.delay = delay; 
+                this.isActive = true; 
+                this.hasExploded = false; 
+                this.time = 0;
+                
+                this.group = new THREE.Group();
+
+                let geometry = originalMesh.geometry.clone();
+                if (geometry.index) {
+                    geometry = geometry.toNonIndexed();
+                }
+
+                const positionAttribute = geometry.attributes.position;
+                const vertexCount = positionAttribute.count;
+                
+                this.dirs = new Float32Array(vertexCount * 3);
+                this.basePosition = geometry.attributes.position.clone();
+
+                let currentChunkSize = 0;
+                let currentChunkCounter = 0;
+                let chunkDirX = 0, chunkDirY = 0, chunkDirZ = 0;
+
+                for (let i = 0; i < vertexCount; i += 3) {
+                    if (currentChunkCounter <= 0) {
+                        currentChunkSize = 100; // Cluster grande
+                        currentChunkCounter = currentChunkSize;
+
+                        const x = (positionAttribute.getX(i) + positionAttribute.getX(i+1) + positionAttribute.getX(i+2)) / 3;
+                        const y = (positionAttribute.getY(i) + positionAttribute.getY(i+1) + positionAttribute.getY(i+2)) / 3;
+                        const z = (positionAttribute.getZ(i) + positionAttribute.getZ(i+1) + positionAttribute.getZ(i+2)) / 3;
+
+                        const radialDir = new THREE.Vector3(x, y, z).normalize();
+                        const noise = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
+                        const finalDir = new THREE.Vector3().copy(radialDir).lerp(noise, 0.4).normalize();
+
+                        let speed = 1.0 + Math.random() * 2.0; 
+                        finalDir.multiplyScalar(speed);
+                        
+                        chunkDirX = finalDir.x;
+                        chunkDirY = finalDir.y;
+                        chunkDirZ = finalDir.z;
+                    }
+                    for (let j = 0; j < 3; j++) {
+                        this.dirs[(i + j) * 3] = chunkDirX;
+                        this.dirs[(i + j) * 3 + 1] = chunkDirY;
+                        this.dirs[(i + j) * 3 + 2] = chunkDirZ;
+                    }
+                    currentChunkCounter--;
+                }
+
+                const material = originalMesh.material.clone();
+                material.side = THREE.DoubleSide; 
+                material.transparent = false; 
+                material.opacity = 1.0;
+                material.alphaTest = 0.5;
+
+                this.mesh = new THREE.Mesh(geometry, material);
+                this.group.add(this.mesh);
+                
+                originalMesh.updateWorldMatrix(true, false);
+                const worldPos = new THREE.Vector3();
+                const worldQuat = new THREE.Quaternion();
+                const worldScale = new THREE.Vector3();
+                originalMesh.getWorldPosition(worldPos);
+                originalMesh.getWorldQuaternion(worldQuat);
+                originalMesh.getWorldScale(worldScale);
+
+                this.group.position.copy(worldPos);
+                this.group.quaternion.copy(worldQuat);
+                this.group.scale.set(1, 1, 1); 
+
+                this.group.visible = false; 
+                this.scene.add(this.group);
+            }
+
+            update(delta) {
+                if (!this.isActive) return false; 
+
+                if (this.delay > 0) {
+                    this.delay -= delta;
+                    return true;
+                }
+
+                if (!this.hasExploded) {
+                    this.hasExploded = true;
+                    this.group.visible = true;
+                    return true;
+                }
+
+                this.time += delta;
+                
+                const positions = this.mesh.geometry.attributes.position;
+                const count = positions.count;
+                const gravity = 25.0; 
+
+                for (let i = 0; i < count; i++) {
+                    const ix = i * 3;
+                    const iy = i * 3 + 1;
+                    const iz = i * 3 + 2;
+                    const t = this.time;
+                    
+                    positions.array[ix] = this.basePosition.array[ix] + (this.dirs[ix] * t);
+                    positions.array[iy] = this.basePosition.array[iy] + (this.dirs[iy] * t) - (0.5 * gravity * t * t);
+                    positions.array[iz] = this.basePosition.array[iz] + (this.dirs[iz] * t);
+                }
+                positions.needsUpdate = true;
+
+                if (this.objectToHide && this.objectToHide.visible && this.time > 0.05) {
+                    this.objectToHide.visible = false;
+                    this.objectToHide.userData.isExploded = true; 
+                }
+
+                if (this.time > 0.6) {
+                    this.mesh.material.transparent = true;
+                    this.mesh.material.opacity = Math.max(0, 1.0 - ((this.time - 0.6) * 2.0));
+                }
+
+                if(this.time > 1.2) { 
+                    this.cleanup();
+                    return false; 
+                }
+                return true;
+            }
+
+            cleanup() {
+                this.scene.remove(this.group);
+                this.mesh.geometry.dispose();
+                if(this.mesh.material.map) this.mesh.material.map.dispose();
+                this.mesh.material.dispose();
+            }
+        }
+
         class SlotGame {
             constructor() {
                 this.loadingText = document.getElementById('loading');
                 this.torresInfo = document.getElementById('torres-info');
                 this.torresCountSpan = document.getElementById('torres-count');
                 this.debugCycleDiv = document.getElementById('debug-cycle');
+                this.uiContainer = document.getElementById('ui-container');
 
-                // --- CONSTANTES ---
                 this.CYLINDER_TARGET_WIDTH = 19.0;
                 this.CAM_LAND_DIST = 25.0; this.CAM_LAND_Y = 0.9; this.CAM_PORT_Y = 0.0; 
                 this.Z_VR = 42; this.Z_ZOOM = 14; this.TEXT_Z_POS = 15.0; 
@@ -123,26 +380,23 @@
                 this.RADIO_ORBITA_BASE = 6.0; this.SEPARACION_CAPAS = 2.5; 
                 this.ANGLE_STEP = (Math.PI * 2) / this.NUM_ITEMS_POR_RUEDA;
                 
-                // ARCHIVOS GLOBALES (TODOS)
                 this.ALL_ASSETS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb', 'torre.glb', 'youwin2.glb'];
-                // SÍMBOLOS que van en los carretes
                 this.REEL_SYMBOLS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb', 'torre.glb', 'noel.glb', 'sirena.glb', 'xic.glb'];
                 this.NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Torre', 'Noel', 'Sirena', 'Xic']; 
                 
                 this.config = {
                     sunIntensity: 2.8, sunPosY: 30, sunPosZ: 20, 
-                    fillIntensity: 0.0, 
-                    fillColor: '#fffbca',
-                    btnHoverEmissive: 3.095, lightHoverInt: 213, lightClickInt: 2889, btnIdleEmissive: 0.3, lightIdleInt: 50,
+                    fillIntensity: 0.0, fillColor: '#fffbca',
+                    btnHoverEmissive: 3.095, lightHoverInt: 50, lightClickInt: 2889, btnIdleEmissive: 0.3, lightIdleInt: 50,
                     aoEnabled: false, aoRadius: 3.68, aoMinDist: 0.001, aoMaxDist: 0.08265,
                     landscapeRotX: -0.1, portraitRotX: 0.0, camRotY: 0.0, camRotZ: 0.0
                 };
                 this.CLICK_BTN_EMISSIVE = 20.0; 
                 
-                this.COIN_COUNT = 100; 
-                this.SPARKLE_COUNT = 1200; 
+                this.COIN_COUNT = 50; 
+                this.SPARKLE_COUNT = 600; 
+                this.DUST_COUNT = 0; 
                 
-                this.DUST_COUNT = 3000;
                 this.COIN_GRAVITY = 20.0; 
                 this.COIN_SCALE = 0.8;
                 this.SPAWN_Y = -10.0; 
@@ -153,7 +407,6 @@
                 
                 this.CENTER_X = 0;
 
-                // --- VARIABLES DE ESTADO ---
                 this.scene = new THREE.Scene();
                 this.camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
                 this.activeCamera = this.camera;
@@ -161,8 +414,12 @@
                 this.loader = new GLTFLoader();
                 this.textureLoader = new THREE.TextureLoader();
                 this.reels = [];
-                this.reelStates = Array(this.NUM_CARRETES * this.NUM_CAPAS).fill(null).map(() => ({ mode: 'IDLE', velocity: 0, targetAngle: 0 }));
+                this.reelStates = Array(this.NUM_CARRETES * this.NUM_CAPAS).fill(null).map(() => ({ mode: 'IDLE', velocity: 0, targetAngle: 0, targetSpeed: 0.125, isSlowFall: false, targetIndex: -1 }));
                 this.symbolMasters = {};
+                this.activeExplosions = []; 
+                this.swellingMeshes = []; 
+                this.popInMeshes = []; 
+                this.activeFusions = []; 
                 
                 this.coinsData = []; this.sparklesData = []; this.dustData = [];
                 this.dummy = new THREE.Object3D();
@@ -173,11 +430,15 @@
                 this.isHovering = false; 
                 this.isRewardActive = false; 
                 this.isTorresActive = false;
+                this.isFusionActive = false; 
+                
                 this.torresState = {
                     totalSpins: 6, spinsLeft: 0, currentLayer: 0, 
                     lockedReels: [[true, true, true], [false, false, false], [false, false, false]], 
                     baseSymbols: [null, null, null], layer1Symbols: [null, null, null], spinThreshold: 3 
                 };
+                this.currentTorresTargets = [0,0,0]; 
+                
                 this.targetX = 0; this.targetY = this.CAM_LAND_Y; this.targetZ = this.CAM_LAND_DIST;
                 this.targetRotX = this.config.landscapeRotX; this.targetRotY = this.config.camRotY; this.targetRotZ = this.config.camRotZ;
                 this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -185,14 +446,11 @@
                 this.raycaster = new THREE.Raycaster();
                 this.pointer = new THREE.Vector2(); 
 
-                // Celebración original (celebracion.html) variables:
                 this.resultGroup = null;
                 this.shineLight = null;
+                this.lockedParticles = null; 
             }
 
-            // =====================================================================
-            // 3. FUNCIONES DE CARGA Y SETUP
-            // =====================================================================
             setupRenderer() {
                 this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -313,17 +571,14 @@
                 const d = 30; this.sunLight.shadow.camera.left = -d; this.sunLight.shadow.camera.right = d; this.sunLight.shadow.camera.top = d; this.sunLight.shadow.camera.bottom = -d;
                 this.sunLight.shadow.bias = -0.0005; this.sunLight.shadow.normalBias = 0.02; this.scene.add(this.sunLight);
 
-                // LUZ DE RELLENO DESHABILITADA (fillIntensity: 0.0)
                 const fillPivot = new THREE.Object3D(); fillPivot.rotation.set(-3.06, -1.36, -2.31); this.scene.add(fillPivot);
                 this.fillLight = new THREE.DirectionalLight(this.config.fillColor, this.config.fillIntensity);
                 this.fillLight.position.set(-8.10, -4.57, -7.28); fillPivot.add(this.fillLight);
 
                 this.pointLight = new THREE.PointLight(0xffaa00, 0, 100);
                 this.pointLight.position.set(0, -5, 16);
-                this.pointLight.castShadow = true;
-                this.pointLight.shadow.bias = -0.0001; this.pointLight.shadow.normalBias = 0.02; 
-                this.pointLight.shadow.mapSize.width = 1024; this.pointLight.shadow.mapSize.height = 1024;
-                this.pointLight.shadow.camera.near = 0.1; this.scene.add(this.pointLight);
+                this.pointLight.castShadow = false; 
+                this.scene.add(this.pointLight);
             }
 
             setupStructure(node) {
@@ -342,9 +597,7 @@
 
                 if (capaIndex > 0) { reelGroup.visible = false; }
 
-                // Usamos REEL_SYMBOLS_GLB para los símbolos del carrete
                 for (let i = 0; i < this.NUM_ITEMS_POR_RUEDA; i++) {
-                    // CORRECCIÓN: Usar REEL_SYMBOLS_GLB que excluye youwin2.glb
                     const glbName = this.REEL_SYMBOLS_GLB[i % this.REEL_SYMBOLS_GLB.length]; 
                     let master = this.symbolMasters[glbName];
                     if (!master) {
@@ -358,7 +611,22 @@
                             child.material.transparent = true; child.material.opacity = 1.0; 
                             child.material.alphaTest = 0.5; 
                             child.userData.originalColor = child.material.color.clone();
+                            
+                            if (child.material.emissive) {
+                                child.userData.originalEmissiveColor = child.material.emissive.clone();
+                            } else {
+                                child.userData.originalEmissiveColor = new THREE.Color(0x000000);
+                            }
+
+                            child.userData.originalEmissiveIntensity = child.material.emissiveIntensity !== undefined ? child.material.emissiveIntensity : 1.0;
+                            if (child.material.emissive && (child.material.emissive.r > 0 || child.material.emissive.g > 0 || child.material.emissive.b > 0)) {
+                                 child.material.emissiveIntensity = child.userData.originalEmissiveIntensity;
+                            }
+                            
                             child.userData.fadeLevel = 1.0; child.userData.isFading = false;
+                            child.userData.isExploded = false;
+                            child.userData.isPulsing = false; 
+                            child.userData.pulseTimer = 0;
                         }
                     });
                     const pivot = new THREE.Group(); pivot.rotation.x = (i * this.ANGLE_STEP);
@@ -373,40 +641,25 @@
                 this.sparkleInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
                 this.scene.add(this.sparkleInstancedMesh);
                 
-                const dustMat = new THREE.MeshBasicMaterial({ map: sparkleTex, color: 0xffd700, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-                const geoD = new THREE.PlaneGeometry(0.05, 0.05); 
-                this.dustInstancedMesh = new THREE.InstancedMesh(geoD, dustMat, this.DUST_COUNT);
-                this.dustInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-                this.scene.add(this.dustInstancedMesh);
-
                 this.dummy.scale.set(0,0,0); this.dummy.updateMatrix();
                 for(let i=0; i<this.COIN_COUNT; i++) { this.coinInstancedMesh.setMatrixAt(i, this.dummy.matrix); }
                 for(let i=0; i<this.SPARKLE_COUNT; i++) { this.sparkleInstancedMesh.setMatrixAt(i, this.dummy.matrix); }
-                for(let i=0; i<this.DUST_COUNT; i++) { this.dustInstancedMesh.setMatrixAt(i, this.dummy.matrix); }
+
+                this.lockedParticles = new LockedParticles(this.scene, sparkleTex);
             }
 
             initParticleData() {
                 for(let i=0; i<this.COIN_COUNT; i++) { 
-                    
                     this.coinsData.push({ position: new THREE.Vector3(), velocity: new THREE.Vector3(), rotation: new THREE.Euler(), active: false, life: 20.0 + Math.random(), offsetPhase: Math.random() * Math.PI * 2 }); 
                 }
                 for(let i=0; i<this.SPARKLE_COUNT; i++) { 
-                    
                     this.sparklesData.push({ 
                         position: new THREE.Vector3(), originPos: new THREE.Vector3(), velocity: new THREE.Vector3(), 
                         active: false, life: 10.0 + Math.random(), 
                         baseScale: 0.1 + Math.random() * 0.9, 
                         offsetPhase: Math.random() * Math.PI * 2,
-                        // PROPIEDAD DE EDAD PARA EL FADE-IN
                         age: 0,
                         distFromCenter: 0
-                    }); 
-                }
-                for(let i=0; i<this.DUST_COUNT; i++) { 
-                    this.dustData.push({ 
-                        position: new THREE.Vector3((Math.random()-0.5)*50, (Math.random()-0.5)*30, (Math.random()*25)), 
-                        velocity: new THREE.Vector3((Math.random()-0.5)*0.5, (Math.random()-0.5)*0.5, 0), 
-                        active: true, life: Math.random(), baseScale: Math.random() * 0.5 + 0.5 
                     }); 
                 }
             }
@@ -415,14 +668,12 @@
                 if (this.resultGroup) return; 
                 this.resultGroup = new THREE.Group();
                 
-                // Usamos youwin2.glb como modelo que realiza la celebración (cartel)
                 const master = this.symbolMasters['youwin2.glb'] || this.symbolMasters['noel.glb']; 
                 const resultModel = master ? master.clone() : new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color: 0xffd700}));
                 this.resultGroup.add(resultModel);
                 
-                // Luz de brillo (shineLight) para la celebración original
                 this.shineLight = new THREE.PointLight(0xffffff, 150, 15); 
-                this.shineLight.position.set(0, 50, 0); // Inicialmente fuera
+                this.shineLight.position.set(0, 50, 0); 
                 this.resultGroup.add(this.shineLight);
 
                 this.resultGroup.position.set(0, this.CAM_LAND_Y, this.TEXT_Z_POS); 
@@ -442,9 +693,6 @@
                 });
             }
 
-            // =====================================================================
-            // 4. MANEJO DE CÁMARA Y EVENTOS
-            // =====================================================================
             addEventListeners() {
                 window.addEventListener('resize', this.onWindowResize.bind(this));
                 window.addEventListener('pointerdown', this.onPointerDown.bind(this));
@@ -495,7 +743,7 @@
             adjustCameraTarget() { 
                 const aspect = window.innerWidth / window.innerHeight; 
                 
-                if (this.isTorresActive) {
+                if (this.isTorresActive || this.isFusionActive) {
                     this.targetX = this.CAM_TORRES_X; this.targetY = this.CAM_TORRES_Y; this.targetZ = this.CAM_TORRES_Z;
                     this.targetRotX = this.CAM_TORRES_RX; this.targetRotY = this.CAM_TORRES_RY; this.targetRotZ = this.CAM_TORRES_RZ;
                 } else {
@@ -539,14 +787,51 @@
                 if (hit) this.spinMachine(); 
             }
 
-            // =====================================================================
-            // 5. LÓGICA DE JUEGO (REGULAR Y TORRES)
-            // =====================================================================
+            hardResetVisuals() {
+                this.reels.forEach(reelGroup => {
+                    reelGroup.children.forEach(pivot => {
+                        const wrapper = pivot.children[0];
+                        if (wrapper) {
+                            wrapper.visible = true; 
+                            wrapper.traverse(c => {
+                                if (c.isMesh) {
+                                    c.visible = true; 
+                                    c.material.opacity = 1.0;
+                                    c.userData.isFading = false;
+                                    c.userData.isExploded = false; 
+                                    c.userData.isPulsing = false;
+                                    c.scale.set(1,1,1);
+                                    if(c.userData.originalEmissiveIntensity !== undefined) {
+                                        c.material.emissiveIntensity = c.userData.originalEmissiveIntensity;
+                                    }
+                                    if(c.userData.originalColor) {
+                                        c.material.color.copy(c.userData.originalColor);
+                                    }
+                                }
+                            });
+                        }
+                    });
+                });
+                
+                this.activeExplosions.forEach(ex => ex.cleanup());
+                this.activeExplosions = [];
+                this.swellingMeshes = [];
+                this.popInMeshes = [];
+                this.activeFusions = [];
+                if(this.lockedParticles) this.lockedParticles.reset();
+            }
 
             spinMachine() {
                 if (this.machineIsSpinning || this.isButtonDisabled) return;
 
-                if (this.isTorresActive) { this.cleanupTorresVisuals(); this.isTorresActive = false; this.torresInfo.classList.remove('active'); }
+                this.hardResetVisuals();
+
+                if (this.isTorresActive || this.isFusionActive) { 
+                    this.cleanupTorresVisuals(); 
+                    this.isTorresActive = false; 
+                    this.isFusionActive = false;
+                    this.torresInfo.classList.remove('active'); 
+                }
 
                 this.machineIsSpinning = true; this.isButtonDisabled = true; this.isZoomed = false;
                 this.adjustCameraTarget(); this.resetCoinsAndFX();
@@ -555,32 +840,24 @@
                 this.isLightFlashing = true; setTimeout(() => this.isLightFlashing = false, 200);
                 
                 this.spinCounter++; 
-                this.debugCycleDiv.innerText = `Tirada: ${this.spinCounter} / 4`;
+                this.debugCycleDiv.innerText = `Tirada: ${this.spinCounter}`;
 
-                // --- LÓGICA DE TRUCAJE SECUENCIAL ---
-                let forcedIndex;
+                // --- LOGICA DE TRUCAJE ---
+                let targetIndices = [0, 0, 0]; 
                 
-                if (this.spinCounter === 1 || this.spinCounter === 2) {
-                    // Tirada 1 y 2: Premio Regular (Noel = índice 0)
-                    forcedIndex = 0; 
-                    console.log(`[TRUCO] Tirada ${this.spinCounter}: Forzando Premio Regular (Noel).`);
-                } else if (this.spinCounter === 3) {
-                    // Tirada 3: Sin Premio (Siren = índice 1)
-                    forcedIndex = 1; 
-                    console.log(`[TRUCO] Tirada ${this.spinCounter}: Forzando NO Premio.`);
-                } else if (this.spinCounter === 4) {
-                    // Tirada 4: Disparar Fase Torres (Torre = índice 4)
-                    forcedIndex = 4;
-                    console.log(`[TRUCO] Tirada ${this.spinCounter}: Forzando 3x Torre.`);
-                    this.spinCounter = 0;
+                if (this.spinCounter % 2 !== 0) {
+                    // IMPAR: FORZAR 1 TORRE (Index 4) en rodillo 0 para entrar
+                    targetIndices = [4, 0, 0]; 
                 } else {
-                    // Si el contador supera 4 (después de la Fase Torres)
-                    forcedIndex = 1; 
+                    // PAR: Forzar Premio Regular (3x Noel)
+                    targetIndices = [0, 0, 0]; 
                 }
                 
                 const BASE_REELS = [0, 1, 2];
                 BASE_REELS.forEach(i => {
-                    this.reelStates[i].mode = 'SPINNING'; this.reelStates[i].velocity = 0; 
+                    this.reelStates[i].mode = 'SPINNING'; 
+                    this.reelStates[i].velocity = 0.35; 
+                    this.reelStates[i].isSlowFall = false; 
                 });
                 for(let i=3; i < this.NUM_CARRETES * this.NUM_CAPAS; i++) { this.reelStates[i].mode = 'IDLE'; }
 
@@ -591,12 +868,7 @@
                     const currentRot = this.reels[globalIndex].rotation.x; 
                     const nextRound = Math.ceil(currentRot / (Math.PI*2)) + 2 + i;
                     
-                    let finalIndex = forcedIndex;
-                    if (this.spinCounter === 3 && i > 0) {
-                        finalIndex = (forcedIndex + i) % this.NUM_ITEMS_POR_RUEDA; 
-                    }
-                    
-                    // Asegura que el símbolo 'finalIndex' aterrice al frente.
+                    let finalIndex = targetIndices[i];
                     state.targetAngle = (nextRound * Math.PI * 2) - (finalIndex * this.ANGLE_STEP);
 
                 }, 200 + (i * 600)); 
@@ -605,7 +877,6 @@
             checkResults() {
                 const resultIndices = [this.reels[0], this.reels[1], this.reels[2]].map(r => { 
                     let ang = r.rotation.x % (Math.PI*2); if(ang < 0) ang += (Math.PI*2); 
-                    
                     const indexAtAngle = Math.round((2 * Math.PI - ang) / this.ANGLE_STEP) % this.NUM_ITEMS_POR_RUEDA;
                     return indexAtAngle;
                 });
@@ -613,13 +884,15 @@
                 const names = resultIndices.map(i => this.NOMBRES_SIMBOLOS[i]);
                 this.torresState.baseSymbols = [...names];
 
-                // NUEVA LÓGICA: 3 Torres van directo a modo torres
-                const isTorresWin = (names[0] === 'Torre' && names[1] === 'Torre' && names[2] === 'Torre');
-                const hasRegularWin = (names[0] === names[1] && names[1] === names[2] && !isTorresWin);
-
-                if (isTorresWin) {
+                const hasTorre = names.includes('Torre'); 
+                
+                if (hasTorre) {
                     setTimeout(() => this.startTorresMode(), 500);
-                } else if (hasRegularWin) {
+                    return; 
+                }
+
+                const hasRegularWin = (names[0] === names[1] && names[1] === names[2]);
+                if (hasRegularWin) {
                     this.triggerWin(names); 
                 } else { 
                     this.isButtonDisabled = false; 
@@ -627,10 +900,7 @@
             }
 
             triggerWin(names) {
-                // El modelo que aparece SIEMPRE debe ser 'youwin2.glb' (el cartel de victoria).
                 let modelFile = 'youwin2.glb';
-                
-                // 1. Actualizar el resultGroup con el modelo YOUWIN2.GLB
                 if (this.resultGroup) {
                     this.resultGroup.remove(...this.resultGroup.children); 
                     
@@ -638,11 +908,7 @@
                     const resultModel = master ? master.clone() : new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({ color: 0xffd700 }));
                     this.resultGroup.add(resultModel);
                     this.resultGroup.add(this.shineLight); 
-                    
-                    // Oculto al principio, aparecerá solo tras el zoom out
                     this.resultGroup.visible = false;
-                    
-                    // Asegura la posición inicial fuera para que la animación de entrada funcione
                     this.resultGroup.position.set(0, this.activeCamera.position.y, this.activeCamera.position.z + 50);
                 }
 
@@ -655,19 +921,27 @@
                 this.adjustCameraTarget(); 
             }
 
-            
             startTorresMode() {
                 this.isTorresActive = true; this.isButtonDisabled = true;
-                this.torresState.totalSpins = 6; this.torresState.spinsLeft = this.torresState.totalSpins; 
+                this.isFusionActive = false;
+                
+                this.hardResetVisuals();
+
+                // 20 SPINS EN MODO TORRES
+                this.torresState.totalSpins = 20; 
+                this.torresState.spinsLeft = this.torresState.totalSpins; 
                 this.torresState.currentLayer = 1; this.torresState.spinThreshold = 3; 
                 this.torresState.lockedReels = [[true, true, true], [false, false, false], [false, false, false]];
                 this.torresState.layer1Symbols = [null, null, null];
                 this.torresInfo.classList.add('active'); 
                 this.torresCountSpan.innerText = this.torresState.spinsLeft;
                 
-                this.toggleLayerVisibility(1, true); 
+                this.toggleLayerVisibility(1, false); 
+                this.toggleLayerVisibility(2, false); 
+
                 this.adjustCameraTarget();
-                setTimeout(this.spinTorresLoop.bind(this), 1500); 
+                
+                setTimeout(this.spinTorresLoop.bind(this), 2000); 
             }
 
             toggleLayerVisibility(layerIdx, isVisible) {
@@ -683,144 +957,453 @@
                 this.adjustCameraTarget();
             }
 
-            spinTorresLoop() {
-                this.torresCountSpan.innerText = this.torresState.spinsLeft;
-                if (this.torresState.spinsLeft <= 0 && this.torresState.currentLayer > 2) { this.endTorresMode(); return; }
-
-                const layerIdx = this.torresState.currentLayer;
-                this.toggleLayerVisibility(layerIdx, true);
-                const reelsStartIndex = layerIdx * this.NUM_CARRETES; 
-                let activeReelsCount = 0;
-
-                for (let i = 0; i < 3; i++) {
-                    if (this.torresState.lockedReels[layerIdx][i]) continue;
-                    if (layerIdx === 2 && !this.torresState.lockedReels[1][i]) { this.reels[reelsStartIndex + i].visible = false; continue; }
-
-                    this.reels[reelsStartIndex + i].visible = true; 
-                    const globalIndex = reelsStartIndex + i;
-                    const r = this.reels[globalIndex]; 
-                    
-                    r.children.forEach(p => { p.children[0].traverse(c => { if (c.isMesh) { c.userData.isFading = false; c.userData.fadeLevel = 1.0; } }); });
-
-                    this.reelStates[globalIndex].mode = 'SPINNING';
-                    this.reelStates[globalIndex].velocity = 0; 
-                    activeReelsCount++;
-                }
-
-                if (activeReelsCount === 0) {
-                    if (this.torresState.currentLayer === 1) { 
-                        const lockedCountL1 = this.torresState.lockedReels[1].filter(Boolean).length;
-                        if (lockedCountL1 === 0) { this.endTorresMode(); return; }
-                        this.torresState.currentLayer = 2; 
-                        this.spinTorresLoop(); 
-                    } else { 
-                        this.endTorresMode(); 
-                    }
-                    return;
-                }
-
-                setTimeout(() => {
-                    for (let i = 0; i < 3; i++) {
-                        const globalIndex = reelsStartIndex + i;
-                        if (this.reelStates[globalIndex].mode === 'SPINNING') {
-                            const state = this.reelStates[globalIndex];
-                            state.mode = 'STOPPING';
-                            const currentRot = this.reels[globalIndex].rotation.x;
-                            const nextRound = Math.ceil(currentRot / (Math.PI*2)) + 1;
-                            
-                            let randIndex;
-                            if (layerIdx === 2) {
-                                randIndex = 4;
-                            } else {
-                                if (this.torresState.spinsLeft <= 3 && !this.torresState.lockedReels[1].every(v => v)) {
-                                    randIndex = 0; 
+            resetReelVisuals(globalIndex) {
+                const r = this.reels[globalIndex];
+                if (!r) return;
+                r.children.forEach(pivot => {
+                    const wrapper = pivot.children[0];
+                    if (wrapper) {
+                        wrapper.visible = true; 
+                        wrapper.traverse(c => {
+                            if (c.isMesh) {
+                                c.visible = true; 
+                                c.material.opacity = 1.0;
+                                c.material.transparent = false; 
+                                c.userData.isFading = false;
+                                c.userData.isExploded = false; 
+                                c.userData.isPulsing = false;
+                                c.scale.set(1,1,1);
+                                if(c.userData.originalEmissiveIntensity !== undefined) {
+                                    c.material.emissiveIntensity = c.userData.originalEmissiveIntensity;
                                 } else {
-                                    randIndex = Math.floor(Math.random() * this.NUM_ITEMS_POR_RUEDA);
+                                    c.material.emissiveIntensity = 0;
+                                }
+                                if(c.userData.originalEmissiveColor) {
+                                    c.material.emissive.copy(c.userData.originalEmissiveColor);
+                                }
+                                if(c.userData.originalColor) {
+                                    c.material.color.copy(c.userData.originalColor);
                                 }
                             }
-                            
-                            state.targetAngle = (nextRound * this.ANGLE_STEP) + (randIndex * this.ANGLE_STEP);
-                        }
-                    }
-                    setTimeout(this.evaluateTorresSpin.bind(this), 1500); 
-                }, 1000);
-                this.torresState.spinsLeft--;
-            }
-
-            evaluateTorresSpin() {
-                const layerIdx = this.torresState.currentLayer;
-                const reelsStartIndex = layerIdx * this.NUM_CARRETES;
-                const currentSymbols = [];
-                for(let i=0; i<3; i++) {
-                    const r = this.reels[reelsStartIndex + i];
-                    let ang = r.rotation.x % (Math.PI*2); if(ang < 0) ang += (Math.PI*2);
-                    const idx = Math.round((2 * Math.PI - ang) / this.ANGLE_STEP) % this.NUM_ITEMS_POR_RUEDA;
-                    currentSymbols.push(this.NOMBRES_SIMBOLOS[idx]);
-                }
-                const targetSymbols = (layerIdx === 1) ? this.torresState.baseSymbols : this.torresState.layer1Symbols;
-                
-                for (let i = 0; i < 3; i++) {
-                    if (this.torresState.lockedReels[layerIdx][i]) continue;
-                    if (layerIdx === 2 && !this.torresState.lockedReels[1][i]) continue;
-
-                    if (currentSymbols[i] === targetSymbols[i]) {
-                        this.torresState.lockedReels[layerIdx][i] = true;
-                    } else {
-                        const globalIndex = reelsStartIndex + i;
-                        this.markReelSymbolForFade(this.reels[globalIndex]);
-                    }
-                }
-                if (layerIdx === 1) { this.torresState.layer1Symbols = [...currentSymbols]; }
-                
-                const lockedCount = this.torresState.lockedReels[layerIdx].filter(Boolean).length;
-                
-                
-                if (layerIdx === 1) {
-                    
-                    if (lockedCount === 3 || this.torresState.spinsLeft <= 0) {
-                          if (lockedCount === 0) { this.endTorresMode(); return; } 
-                          this.torresState.currentLayer = 2; 
-                        this.spinTorresLoop(); 
-                    }
-                }
-                
-                
-                if (layerIdx === 2 && this.torresState.spinsLeft <= 0) {
-                     this.endTorresMode(); 
-                     return;
-                }
-
-                setTimeout(this.spinTorresLoop.bind(this), 500);
-            }
-
-            markReelSymbolForFade(reelGroup) {
-                const reelAngle = reelGroup.rotation.x;
-                reelGroup.children.forEach(pivot => {
-                    let angle = (reelAngle + pivot.rotation.x) % (Math.PI * 2);
-                    if (angle < 0) angle += Math.PI*2;
-                    if (angle < 0.1 || angle > 6.18) {
-                        pivot.children[0].traverse(c => { if (c.isMesh) c.userData.isFading = true; });
+                        });
                     }
                 });
             }
 
-            endTorresMode() {
-                let l1Full = this.torresState.lockedReels[1].every(v => v);
-                let l2Full = this.torresState.lockedReels[2].every(v => v);
-                let multiplier = l2Full ? 3 : (l1Full ? 2 : 1);
+            spinTorresLoop() {
+                this.torresCountSpan.innerText = this.torresState.spinsLeft;
+
+                // COMPROBACION EARLY EXIT (Si capas llenas, salir)
+                const layer1Full = this.torresState.lockedReels[1].every(Boolean);
+                const layer2Full = this.torresState.lockedReels[2].every(Boolean);
+
+                if (layer1Full && layer2Full) {
+                     this.waitForExplosionsAndEnd();
+                     return;
+                }
                 
-                this.isTorresActive = false; 
+                // Chequeo de fin de capa 1 -> pasar a capa 2
+                if (this.torresState.currentLayer === 1 && layer1Full) {
+                     this.torresState.currentLayer = 2; 
+                     setTimeout(this.spinTorresLoop.bind(this), 1000);
+                     return;
+                }
+                
+                if (this.torresState.spinsLeft <= 0) { 
+                    this.waitForExplosionsAndEnd(); 
+                    return; 
+                }
+
+                const layerIdx = this.torresState.currentLayer;
+
+                if (layerIdx > 1) {
+                    const prevLayer = layerIdx - 1;
+                    const prevStartIdx = prevLayer * this.NUM_CARRETES;
+                    for (let i = 0; i < 3; i++) {
+                        if (!this.torresState.lockedReels[prevLayer][i]) {
+                            if(this.reels[prevStartIdx + i]) this.reels[prevStartIdx + i].visible = false;
+                        }
+                    }
+                }
+
+                // NUEVA LOGICA DE VISIBILIDAD SECUENCIAL (Fix all-at-once)
+                const startReelIdx = layerIdx * this.NUM_CARRETES;
+                for(let i=0; i<3; i++) {
+                    if(!this.torresState.lockedReels[layerIdx][i]) {
+                        // Si no está bloqueado, lo ocultamos para mostrarlo luego 1 a 1
+                        if(this.reels[startReelIdx + i]) this.reels[startReelIdx + i].visible = false;
+                    } else {
+                        // Si está bloqueado, debe verse
+                        if(this.reels[startReelIdx + i]) this.reels[startReelIdx + i].visible = true;
+                    }
+                }
+                
+                const targetIndices = [0,0,0];
+                for(let i=0; i<3; i++) {
+                    const targetSymbolName = this.torresState.baseSymbols[i];
+                    const targetIndex = this.NOMBRES_SIMBOLOS.indexOf(targetSymbolName);
+                    
+                    if (this.torresState.lockedReels[layerIdx][i]) {
+                        targetIndices[i] = targetIndex;
+                    } else {
+                        // 40% chance de acertar
+                        if (Math.random() < 0.4) {
+                             targetIndices[i] = targetIndex; 
+                        } else {
+                             let rnd = Math.floor(Math.random() * 8);
+                             if(rnd === targetIndex) rnd = (rnd + 1) % 8;
+                             targetIndices[i] = rnd;
+                        }
+                    }
+                }
+                
+                this.currentTorresTargets = targetIndices;
+                this.runTorresSequence(0);
+                this.torresState.spinsLeft--;
+            }
+
+            runTorresSequence(reelStep) {
+                if (reelStep > 2) {
+                    const layerIdx = this.torresState.currentLayer;
+                    const lockedCount = this.torresState.lockedReels[layerIdx].filter(Boolean).length;
+                    
+                    if (layerIdx === 1 && lockedCount === 3) {
+                         this.torresState.currentLayer = 2;
+                         setTimeout(this.spinTorresLoop.bind(this), 2000);
+                    } else {
+                        setTimeout(this.spinTorresLoop.bind(this), 500);
+                    }
+                    return;
+                }
+
+                const layerIdx = this.torresState.currentLayer;
+                
+                if (this.torresState.lockedReels[layerIdx][reelStep]) {
+                    this.runTorresSequence(reelStep + 1);
+                    return;
+                }
+                if (layerIdx === 2 && !this.torresState.lockedReels[1][reelStep]) {
+                    this.runTorresSequence(reelStep + 1);
+                    return;
+                }
+
+                const reelsStartIndex = layerIdx * this.NUM_CARRETES;
+                const globalIndex = reelsStartIndex + reelStep;
+                const r = this.reels[globalIndex];
+                
+                // REVELAR RODILLO ACTUAL
+                r.visible = true; 
+                this.resetReelVisuals(globalIndex);
+                
+                const finalIndex = this.currentTorresTargets[reelStep];
+                this.reelStates[globalIndex].targetIndex = finalIndex;
+                const nextRound = Math.ceil(r.rotation.x / (Math.PI*2)); 
+                const targetAngle = (nextRound * Math.PI * 2) - (finalIndex * this.ANGLE_STEP);
+                r.rotation.x = targetAngle;
+
+                for(let j=0; j<this.NUM_ITEMS_POR_RUEDA; j++) {
+                    const pivot = r.children[j];
+                    const wrapper = pivot.children[0];
+                    if (j === finalIndex) {
+                        wrapper.traverse(c => {
+                            if(c.isMesh) {
+                                c.visible = true;
+                                c.scale.set(0,0,0); 
+                                // POP MAS RAPIDO (0.25s)
+                                this.popInMeshes.push({ mesh: c, time: 0, duration: 0.25 });
+                            }
+                        });
+                    } else {
+                        wrapper.traverse(c => { if(c.isMesh) c.visible = false; });
+                    }
+                }
+
+                // ESPERA MAS CORTA (350ms)
+                setTimeout(() => {
+                    this.evaluateSingleReel(reelStep, globalIndex);
+                }, 350);
+            }
+
+            evaluateSingleReel(reelStep, globalIndex) {
+                const layerIdx = this.torresState.currentLayer;
+                const finalIndex = this.currentTorresTargets[reelStep];
+                const currentName = this.NOMBRES_SIMBOLOS[finalIndex];
+                
+                let targetName = "";
+                if (layerIdx === 1) targetName = this.torresState.baseSymbols[reelStep];
+                else targetName = this.torresState.layer1Symbols[reelStep];
+
+                let delayNext = 0;
+
+                if (currentName === targetName) {
+                    this.torresState.lockedReels[layerIdx][reelStep] = true;
+                    if (layerIdx === 1) this.torresState.layer1Symbols[reelStep] = currentName;
+                    
+                    this.triggerPulseEffect(this.reels[globalIndex], finalIndex);
+                    delayNext = 400; // Reducido un poco
+                } else {
+                    this.triggerSymbolExplosion(this.reels[globalIndex], 0, finalIndex);
+                    delayNext = 300; // Reducido un poco
+                }
+
+                setTimeout(() => {
+                    this.runTorresSequence(reelStep + 1);
+                }, delayNext);
+            }
+
+            updatePopIns(delta) {
+                for(let i=this.popInMeshes.length-1; i>=0; i--) {
+                    const p = this.popInMeshes[i];
+                    p.time += delta;
+                    let t = Math.min(p.time / p.duration, 1.0);
+                    
+                    let scale = 1;
+                    if (t < 1) {
+                        const c4 = (2 * Math.PI) / 3;
+                        scale = Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+                    }
+                    
+                    p.mesh.scale.set(scale, scale, scale);
+                    if(t >= 1) this.popInMeshes.splice(i, 1);
+                }
+            }
+
+            triggerPulseEffect(reelGroup, targetIndex) {
+                const pivot = reelGroup.children[targetIndex];
+                if (pivot) {
+                    const wrapper = pivot.children[0];
+                    wrapper.traverse(c => {
+                        if(c.isMesh) {
+                            c.userData.isPulsing = true;
+                            c.userData.pulseTimer = 0;
+                        }
+                    });
+                }
+            }
+
+            triggerSymbolExplosion(reelGroup, delay, targetIndex) {
+                const pivot = reelGroup.children[targetIndex];
+                if (pivot) {
+                    const wrapper = pivot.children[0];
+                    let targetMesh = null;
+                    wrapper.traverse(c => {
+                        if(c.isMesh && !targetMesh) targetMesh = c; 
+                    });
+
+                    if (targetMesh) {
+                        targetMesh.visible = true;
+                        targetMesh.scale.set(1,1,1);
+                        targetMesh.material.opacity = 1.0;
+                        
+                        this.swellingMeshes.push({
+                            mesh: targetMesh,
+                            wrapper: wrapper,
+                            delay: delay,
+                            time: 0,
+                            duration: 0.2, 
+                            scene: this.scene
+                        });
+                    }
+                }
+            }
+
+            updateSwellings(delta) {
+                for (let i = this.swellingMeshes.length - 1; i >= 0; i--) {
+                    const item = this.swellingMeshes[i];
+                    item.time += delta;
+                    
+                    if (item.time < item.delay) continue;
+
+                    const activeTime = item.time - item.delay;
+                    const progress = Math.min(activeTime / item.duration, 1.0);
+                    
+                    const scale = 1.0 + (progress * 0.4); 
+                    item.mesh.scale.set(scale, scale, scale);
+
+                    if (progress >= 1.0) {
+                        item.mesh.visible = false;
+                        const explosion = new ExplosionMesh(item.mesh, item.scene, item.wrapper, 0);
+                        explosion.update(0); 
+                        this.activeExplosions.push(explosion);
+                        this.swellingMeshes.splice(i, 1);
+                    }
+                }
+            }
+
+            waitForExplosionsAndEnd() {
+                if (this.activeExplosions.length > 0 || this.swellingMeshes.length > 0) {
+                    requestAnimationFrame(this.waitForExplosionsAndEnd.bind(this));
+                } else {
+                    this.startFusionSequence();
+                }
+            }
+            
+            // --- NUEVA SECUENCIA DE FUSIÓN ---
+            startFusionSequence() {
+                this.isTorresActive = false;
+                this.isFusionActive = true; 
+
+                // FORZAR ALINEACIÓN DE ÍNDICES PARA QUE LA VISIBILIDAD FUNCIONE PERFECTA
+                // Y EL MOVIMIENTO SEA PURO EN EL EJE Z (Profundidad)
+                for(let col=0; col<3; col++) {
+                    const symbolName = this.torresState.baseSymbols[col];
+                    const symbolIdx = this.NOMBRES_SIMBOLOS.indexOf(symbolName);
+                    
+                    // Capa Base
+                    this.reelStates[col].targetIndex = symbolIdx;
+                    // Capa 1
+                    this.reelStates[this.NUM_CARRETES + col].targetIndex = symbolIdx;
+                    // Capa 2
+                    this.reelStates[this.NUM_CARRETES*2 + col].targetIndex = symbolIdx;
+                }
+
+                this.runFusionReel(0); 
+            }
+
+            runFusionReel(colIndex) {
+                if (colIndex > 2) {
+                    this.endGameWithWin();
+                    return;
+                }
+
+                const hasLayer1 = this.torresState.lockedReels[1][colIndex];
+                const hasLayer2 = this.torresState.lockedReels[2][colIndex];
+
+                let sequence = Promise.resolve();
+
+                if (hasLayer2) {
+                    sequence = sequence.then(() => this.animateFusionStep(colIndex, 2, 1, "x4"));
+                }
+
+                if (hasLayer1) {
+                    sequence = sequence.then(() => this.animateFusionStep(colIndex, 1, 0, "x2"));
+                }
+
+                sequence.then(() => {
+                    setTimeout(() => this.runFusionReel(colIndex + 1), 300);
+                });
+            }
+
+            animateFusionStep(colIndex, fromLayer, toLayer, textString) {
+                return new Promise((resolve) => {
+                    const fromReelIdx = (fromLayer * this.NUM_CARRETES) + colIndex;
+                    const toReelIdx = (toLayer * this.NUM_CARRETES) + colIndex;
+                    
+                    const fromReel = this.reels[fromReelIdx];
+                    const toReel = this.reels[toReelIdx];
+                    
+                    // USAMOS EL ÍNDICE FORZADO PARA ENCONTRAR EL MESH EXACTO
+                    const symbolIdx = this.reelStates[fromReelIdx].targetIndex;
+                    
+                    let fromMesh = null;
+                    const fromPivot = fromReel.children[symbolIdx];
+                    if(fromPivot) {
+                         fromPivot.children[0].traverse(c => { if(c.isMesh) fromMesh = c; });
+                    }
+
+                    let toMesh = null;
+                    const toPivot = toReel.children[symbolIdx];
+                    if(toPivot) {
+                         toPivot.children[0].traverse(c => { if(c.isMesh) toMesh = c; });
+                    }
+
+                    if (!fromMesh || !toMesh) { resolve(); return; }
+
+                    const clone = fromMesh.clone();
+                    const worldPosStart = new THREE.Vector3();
+                    const worldPosEnd = new THREE.Vector3();
+                    
+                    fromMesh.getWorldPosition(worldPosStart);
+                    toMesh.getWorldPosition(worldPosEnd);
+                    
+                    clone.position.copy(worldPosStart);
+                    clone.quaternion.copy(fromMesh.getWorldQuaternion(new THREE.Quaternion()));
+                    clone.scale.copy(fromMesh.getWorldScale(new THREE.Vector3()));
+                    
+                    this.scene.add(clone);
+                    fromMesh.visible = false; 
+
+                    this.activeFusions.push({
+                        mesh: clone,
+                        start: worldPosStart,
+                        end: worldPosEnd,
+                        time: 0,
+                        duration: 0.5,
+                        onComplete: () => {
+                            this.scene.remove(clone);
+                            this.createFloatingText(textString, worldPosEnd);
+                            resolve();
+                        }
+                    });
+                });
+            }
+
+            createFloatingText(text, position) {
+                const div = document.createElement('div');
+                div.className = 'fusion-text';
+                div.innerText = text;
+                this.uiContainer.appendChild(div);
+
+                const trackData = {
+                    element: div,
+                    worldPos: position.clone(),
+                    life: 1.5,
+                    active: true
+                };
+                
+                requestAnimationFrame(() => { div.classList.add('show'); });
+
+                this.floatingTexts = this.floatingTexts || [];
+                this.floatingTexts.push(trackData);
+            }
+
+            updateFloatingTexts(delta) {
+                if(!this.floatingTexts) return;
+                
+                for(let i=this.floatingTexts.length-1; i>=0; i--) {
+                    const ft = this.floatingTexts[i];
+                    ft.life -= delta;
+                    
+                    if (ft.life <= 0) {
+                        ft.element.remove();
+                        this.floatingTexts.splice(i, 1);
+                        continue;
+                    }
+
+                    const screenPos = ft.worldPos.clone().project(this.activeCamera);
+                    const x = (screenPos.x * .5 + .5) * window.innerWidth;
+                    const y = (-(screenPos.y * .5) + .5) * window.innerHeight;
+
+                    ft.element.style.left = `${x}px`;
+                    ft.element.style.top = `${y}px`;
+                }
+            }
+
+            updateFusions(delta) {
+                for(let i=this.activeFusions.length-1; i>=0; i--) {
+                    const f = this.activeFusions[i];
+                    f.time += delta;
+                    const t = Math.min(f.time / f.duration, 1.0);
+                    
+                    f.mesh.position.lerpVectors(f.start, f.end, t);
+                    
+                    if (t > 0.5) {
+                        const s = 1.0 - ((t - 0.5) * 2.0); 
+                        f.mesh.scale.set(s,s,s);
+                    }
+
+                    if (t >= 1.0) {
+                        if(f.onComplete) f.onComplete();
+                        this.activeFusions.splice(i, 1);
+                    }
+                }
+            }
+
+            endGameWithWin() {
+                this.isFusionActive = false; // FIN DEL MODO TORRES/FUSION
                 this.torresInfo.classList.remove('active'); 
                 this.cleanupTorresVisuals();
-
-                if (multiplier > 1) { 
-                    // Si gana un multiplicador, disparamos la celebración (modelo YOUWIN2.GLB)
-                    this.triggerWin(['FINAL_WIN']); 
-                } else { 
-                    setTimeout(() => { 
-                        this.isButtonDisabled = false; 
-                    }, 3000); 
-                }
+                this.triggerWin(['FINAL_WIN']); 
             }
 
             spawnCoins() { 
@@ -836,34 +1419,27 @@
                     const targetHeight = this.MIN_APEX + Math.random() * (this.MAX_APEX - this.MIN_APEX);
                     const height = targetHeight - this.SPAWN_Y;
                     
-                    
                     const v0 = Math.sqrt(2 * this.COIN_GRAVITY * height); 
                     
-                    
                     data.position.set(CENTER_SPAWN_X + (Math.random() - 0.5) * MAX_WIDTH_SPAWN, 
-                                    this.SPAWN_Y, 
-                                    COIN_SPAWN_Z + (Math.random() - 0.5) * 2.0); 
-                    
+                                      this.SPAWN_Y, 
+                                      COIN_SPAWN_Z + (Math.random() - 0.5) * 2.0); 
                     
                     data.velocity.set((Math.random() - 0.5) * 5.0, 
-                                    v0 + (Math.random() * 3.0), 
-                                    (Math.random() - 0.5) * 2.0); 
+                                      v0 + (Math.random() * 3.0), 
+                                      (Math.random() - 0.5) * 2.0); 
                     
                     data.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI); 
                 } 
             }
 
             spawnSparkles() {
-                
                 const cartelX = this.CENTER_X; 
-                // --- AJUSTE DE POSICIÓN Y TAMAÑO ---
                 const cartelY = 1.0; 
                 const cartelZ = this.TEXT_Z_POS; 
                 
-                // Radio más pequeño (80% del anterior)
                 const RADIUS_X = 10.0; 
                 const RADIUS_Y = 2.5;  
-                
                 const SPEED_FACTOR = 3.5; 
 
                 if(!this.sparkleInstancedMesh) return;
@@ -876,11 +1452,7 @@
                     s.baseScale = 0.1 + Math.random() * 0.9;
                     
                     const angle = s.offsetPhase; 
-                    
-                    // --- RELLENO DEL ÓVALO ---
-                    // Multiplicamos por factor aleatorio para cubrir superficie
                     const distFactor = Math.random(); 
-                    
                     const radiusX = (RADIUS_X * distFactor) + (Math.random() - 0.5) * 0.5;
                     const radiusY = (RADIUS_Y * distFactor) + (Math.random() - 0.5) * 0.2;
 
@@ -923,15 +1495,14 @@
                 const PHASE3_START = 2.0;
                 const SEQUENCE_DURATION = PHASE3_START + 5.0; 
 
-                // Lógica de Aparición de Efectos
                 if (elapsed >= PHASE3_START && !this.winSequence.fxSpawned) {
-                     this.spawnCoins(); 
-                     this.spawnSparkles();
-                     this.winSequence.fxSpawned = true;
-                     if(this.resultGroup) { 
+                      this.spawnCoins(); 
+                      this.spawnSparkles();
+                      this.winSequence.fxSpawned = true;
+                      if(this.resultGroup) { 
                         this.resultGroup.visible = true;
                         this.resultGroup.position.z = 45.0; 
-                     }
+                      }
                 }
 
                 if (elapsed >= PHASE3_START && elapsed < SEQUENCE_DURATION && this.resultGroup && this.resultGroup.visible) {
@@ -956,8 +1527,8 @@
                     this.resultGroup.position.z = currentZ;
 
                     if (this.shineLight) {
-                         const sweep = Math.sin(time * 3.0) * 10.0;
-                         this.shineLight.position.set(sweep, 0, 5.0);
+                          const sweep = Math.sin(time * 3.0) * 10.0;
+                          this.shineLight.position.set(sweep, 0, 5.0);
                     }
                 }
                 
@@ -977,11 +1548,19 @@
             }
 
             updateSymbolVisibility() {
-                this.reels.forEach((reelGroup) => {
+                const delta = Math.min(this.clock.getDelta(), 0.1); 
+                const visualDelta = 0.016; 
+
+                this.reels.forEach((reelGroup, globalIndex) => {
                     if (!reelGroup.visible && reelGroup.position.z > this.SEPARACION_CAPAS * 0.5) return; 
 
                     const reelAngle = reelGroup.rotation.x;
-                    reelGroup.children.forEach((pivotGroup) => {
+                    
+                    // En modo Torres o Fusion, OBLIGAR a mostrar solo el símbolo target
+                    const forceSingleSymbol = (this.isTorresActive || this.isFusionActive);
+                    const forcedIndex = this.reelStates[globalIndex].targetIndex;
+
+                    reelGroup.children.forEach((pivotGroup, childIndex) => {
                         const symbolAngle = pivotGroup.rotation.x; 
                         let totalAngle = (reelAngle + symbolAngle) % (Math.PI * 2); 
                         if(totalAngle < 0) totalAngle += (Math.PI * 2);
@@ -992,35 +1571,70 @@
                         if (symbolWrapper) {
                             symbolWrapper.traverse((child) => {
                                 if (child.isMesh && child.material && child.userData.originalColor) {
+                                    
+                                    if (forceSingleSymbol) {
+                                        if (childIndex !== forcedIndex && forcedIndex !== -1) {
+                                            child.visible = false;
+                                            return; 
+                                        }
+                                    }
+
+                                    if (child.userData.isExploded) {
+                                        child.visible = false; 
+                                        return; 
+                                    }
+
+                                    if (child.userData.isPulsing) {
+                                        child.userData.pulseTimer += visualDelta * 5.0; 
+                                        const sine = (Math.sin(child.userData.pulseTimer) + 1) * 0.5; 
+                                        
+                                        const color1 = new THREE.Color(0xFF4500); 
+                                        const color2 = new THREE.Color(0xFFFF00); 
+                                        const finalColor = color1.lerp(color2, sine);
+                                        
+                                        child.material.emissive.copy(finalColor);
+                                        child.material.emissiveIntensity = 0.2 + (sine * 0.6); 
+                                        
+                                        const scale = 1.0 + (sine * 0.1);
+                                        child.scale.set(scale, scale, scale);
+
+                                    } else {
+                                        let isSpecial = false;
+                                        for(let s of this.swellingMeshes) { if(s.mesh === child) isSpecial = true; }
+                                        for(let p of this.popInMeshes) { if(p.mesh === child) isSpecial = true; }
+                                        for(let f of this.activeFusions) { if(f.mesh === child) isSpecial = true; }
+                                        
+                                        if(!isSpecial) {
+                                            child.scale.set(1, 1, 1);
+                                        }
+                                        
+                                        child.material.emissiveIntensity = child.userData.originalEmissiveIntensity;
+                                        if(child.userData.originalEmissiveColor) {
+                                            child.material.emissive.copy(child.userData.originalEmissiveColor);
+                                        }
+                                        child.material.color.copy(child.userData.originalColor);
+                                    }
+
                                     let brightness = (cosA > 0) ? Math.pow(cosA, 0.5) : 0.05;
                                     let rowOpacity = 1.0; 
 
-                                    // Lógica de fading de la Fase Torres (20% opacidad en filas sup/inf)
-                                    if (this.isTorresActive) { 
-                                        // Si es capa trasera, mantener fading de distancia
-                                        if (reelGroup.position.z > this.SEPARACION_CAPAS * 0.5) {
-                                            if (cosA < 0.95) rowOpacity = 0.15; 
-                                            if (child.userData.isFading) {
-                                                child.userData.fadeLevel = Math.max(0, child.userData.fadeLevel - 0.05 * this.clock.getDelta() * 60);
-                                            }
-                                        } else {
-                                            // Capa frontal: Si no está en el centro (cosA cerca de 1), opacidad 20%
-                                            if (cosA < 0.95) {
-                                                rowOpacity = 0.2; 
-                                            }
-                                        }
+                                    // Si es Torres/Fusion, solo renderizamos lo necesario arriba
+                                    if (this.isTorresActive || this.isFusionActive) { 
+                                         rowOpacity = 1.0; 
                                     } else {
                                         child.userData.fadeLevel = 1.0;
+                                        if(!child.userData.isExploded) child.visible = true;
                                     }
 
                                     let finalOpacity = rowOpacity * child.userData.fadeLevel;
                                     child.material.opacity = finalOpacity;
                                     child.material.alphaTest = (finalOpacity < 0.01) ? 0 : 0.5;
-                                    child.material.color.copy(child.userData.originalColor).multiplyScalar(brightness);
                                     
-                                    // --- NUEVA LÓGICA DE SOMBRAS ---
-                                    // Si estamos en Torres y la fila es transparente (rowOpacity < 0.5), desactivar sombra
-                                    if (this.isTorresActive && rowOpacity < 0.5) {
+                                    if (!child.userData.isPulsing) {
+                                        child.material.color.copy(child.userData.originalColor).multiplyScalar(brightness);
+                                    } 
+                                    
+                                    if ((this.isTorresActive || this.isFusionActive) && rowOpacity < 0.5) {
                                         child.castShadow = false;
                                     } else {
                                         child.castShadow = true;
@@ -1033,7 +1647,20 @@
             }
 
             updateParticles(delta, time) {
+                this.updateSwellings(delta);
+                this.updatePopIns(delta); 
+                this.updateFusions(delta);
+                this.updateFloatingTexts(delta);
                 
+                if(this.lockedParticles) this.lockedParticles.update(delta, this.activeCamera);
+
+                for (let i = this.activeExplosions.length - 1; i >= 0; i--) {
+                    const finished = !this.activeExplosions[i].update(delta);
+                    if (finished) {
+                        this.activeExplosions.splice(i, 1);
+                    }
+                }
+
                 if(this.coinInstancedMesh) {
                     this.coinsData.forEach((data, i) => {
                         if (data.active) {
@@ -1062,7 +1689,6 @@
                     this.coinInstancedMesh.instanceMatrix.needsUpdate = true;
                 }
 
-                
                 if(this.sparkleInstancedMesh) {
                     const elapsedTotal = time - this.winSequence.startTime;
                     const PHASE3_START = 2.0;
@@ -1104,34 +1730,8 @@
                     });
                     this.sparkleInstancedMesh.instanceMatrix.needsUpdate = true;
                 }
-
-                
-                if(this.dustInstancedMesh) {
-                    if (this.winSequence.active || this.isTorresActive) { 
-                        this.dustInstancedMesh.visible = true; 
-                        this.dustData.forEach((d, i) => {
-                            d.position.addScaledVector(d.velocity, delta);
-                            
-                            if(d.position.x > 50) d.position.x = -50;
-                            if(d.position.x < -50) d.position.x = 50;
-                            if(d.position.y > 30) d.position.y = -30;
-                            if(d.position.y < -30) d.position.y = 30;
-                            
-                            const osc = Math.sin(time + i) * 0.2 + 0.8;
-                            this.dummy.position.copy(d.position);
-                            this.dummy.quaternion.copy(this.activeCamera.quaternion);
-                            this.dummy.scale.set(d.baseScale * osc, d.baseScale * osc, d.baseScale * osc);
-                            this.dummy.updateMatrix();
-                            this.dustInstancedMesh.setMatrixAt(i, this.dummy.matrix);
-                        });
-                        this.dustInstancedMesh.instanceMatrix.needsUpdate = true;
-                    } else {
-                        this.dustInstancedMesh.visible = false; 
-                    }
-                }
             }
 
-            
             animate() {
                 requestAnimationFrame(this.animate.bind(this));
                 const delta = Math.min(this.clock.getDelta(), 0.1);
@@ -1150,18 +1750,19 @@
                     
                     if(s.mode === 'SPINNING') { 
                         allIdle = false; 
-                        // --- VELOCIDAD REDUCIDA A LA MITAD (0.25 -> 0.125) ---
-                        if(s.velocity < 0.125) s.velocity += 0.005 * timeScale; 
+                        if(s.velocity < s.targetSpeed) s.velocity = s.targetSpeed; 
                         r.rotation.x += s.velocity * timeScale; 
                     } else if(s.mode === 'STOPPING') { 
                         allIdle = false; 
-                        const diff = s.targetAngle - r.rotation.x; 
-                        s.velocity += diff * 0.25 * timeScale; 
-                        s.velocity *= Math.pow(0.80, timeScale); 
-                        r.rotation.x += s.velocity * timeScale; 
-                        if(Math.abs(diff) < 0.005 && Math.abs(s.velocity) < 0.005) { 
-                            r.rotation.x = s.targetAngle; s.mode = 'IDLE'; 
-                        } 
+                        const remaining = s.targetAngle - r.rotation.x;
+                        const friction = s.isSlowFall ? 0.05 : 0.1;
+                        const step = remaining * friction * timeScale; 
+                        r.rotation.x += step;
+                        if(Math.abs(remaining) < 0.001) { 
+                            r.rotation.x = s.targetAngle; 
+                            s.mode = 'IDLE'; 
+                            r.rotation.x = r.rotation.x % (Math.PI * 2);
+                        }
                     }
                 });
                 
@@ -1173,17 +1774,16 @@
                 }
 
                 
-                let targetBtnInt = 0; let targetLightInt = 0;
+                let targetBtnInt = 0; let targetLightInt = 0; 
                 let targetSun = this.config.sunIntensity; let targetFill = this.config.fillIntensity;
 
-                const effectiveHover = (this.isHovering && !this.isButtonDisabled && !this.isRewardActive && !this.isTorresActive); 
+                const effectiveHover = (this.isHovering && !this.isButtonDisabled && !this.isRewardActive && !this.isTorresActive && !this.isFusionActive); 
 
                 if (effectiveHover !== this.wasHoveringState) {
-                    if (this.sunLight) this.sunLight.castShadow = !effectiveHover; 
                     this.wasHoveringState = effectiveHover;
                 }
 
-                if (this.isRewardActive || this.isTorresActive) { targetSun = this.config.sunIntensity; targetFill = this.config.fillIntensity;
+                if (this.isRewardActive || this.isTorresActive || this.isFusionActive) { targetSun = this.config.sunIntensity; targetFill = this.config.fillIntensity;
                 } else if (effectiveHover) { targetSun = this.config.sunIntensity * 0.5; targetFill = 0.0; }
                 
                 if (this.sunLight) this.sunLight.intensity += (targetSun - this.sunLight.intensity) * 0.1;
@@ -1191,16 +1791,14 @@
 
                 if (this.isLightFlashing) {
                     targetBtnInt = this.CLICK_BTN_EMISSIVE; targetLightInt = this.config.lightClickInt; if(this.pointLight) this.pointLight.color.setHex(0xFFFFFF);
-                } else if (this.isButtonDisabled || this.isTorresActive) {
-                    targetBtnInt = 0.0; targetLightInt = 0; if(this.pointLight) this.pointLight.color.setHex(0xFFAA00);
                 } else {
                     targetBtnInt = effectiveHover ? this.config.btnHoverEmissive : this.config.btnIdleEmissive;
-                    targetLightInt = effectiveHover ? this.config.lightHoverInt : this.config.lightIdleInt;
+                    targetLightInt = 0; 
                     if(this.pointLight) this.pointLight.color.setHex(0xFFAA00);
                 }
 
                 if (this.spinButtonMesh && this.spinButtonMesh.material) this.spinButtonMesh.material.emissiveIntensity += (targetBtnInt - this.spinButtonMesh.material.emissiveIntensity) * 0.2;
-                if (this.pointLight) { this.pointLight.intensity += (targetLightInt - this.pointLight.intensity) * 0.2; this.pointLight.distance = 134; }
+                if (this.pointLight) { this.pointLight.intensity += (targetLightInt - this.pointLight.intensity) * 0.2; } 
 
                 
                 let currentTargetZ = this.targetZ;
@@ -1212,13 +1810,9 @@
                 let cameraInterpolationSpeed = 0.05;
                 let skipPositionUpdate = false; 
                 
-                
                 if (this.winSequence.active && !this.isTorresActive && !this.isVRMode) {
                     const elapsed = time - this.winSequence.startTime;
-                    
-                    
                     if (elapsed < 1.0) {
-                        
                         const t = elapsed / 1.0;
                         const ease = t * (2 - t);
                         currentTargetZ = THREE.MathUtils.lerp(this.targetZ, this.Z_ZOOM, ease);
@@ -1226,7 +1820,6 @@
                         cameraInterpolationSpeed = 0.15; 
                     } 
                     else if (elapsed < 2.0) {
-                        
                         const t = (elapsed - 1.0) / 1.0;
                         const ease = t * t * (3 - 2 * t);
                         currentTargetZ = THREE.MathUtils.lerp(this.Z_ZOOM, this.targetZ, ease);
@@ -1234,17 +1827,14 @@
                         cameraInterpolationSpeed = 0.15; 
                     }
                     else {
-                        
                         currentTargetZ = this.targetZ; 
                         currentTargetY = this.targetY;
                     }
 
                 } else {
-                    
                     currentTargetZ = this.targetZ;
                     currentTargetY = this.targetY;
                 }
-
                 
                 if (!skipPositionUpdate) {
                     this.activeCamera.rotation.x += (currentTargetRotX - this.activeCamera.rotation.x) * cameraInterpolationSpeed * timeScale;
@@ -1255,14 +1845,12 @@
                     this.activeCamera.position.z += (currentTargetZ - this.activeCamera.position.z) * cameraInterpolationSpeed * timeScale;
                     this.activeCamera.position.y += (currentTargetY - this.activeCamera.position.y) * cameraInterpolationSpeed * timeScale;
                 } else {
-                    
                     const rotationSpeed = cameraInterpolationSpeed; 
                     this.activeCamera.rotation.x += (currentTargetRotX - this.activeCamera.rotation.x) * rotationSpeed * timeScale;
                     this.activeCamera.rotation.y += (currentTargetRotY - this.activeCamera.rotation.y) * rotationSpeed * timeScale;
                     this.activeCamera.rotation.z += (currentTargetRotZ - this.activeCamera.rotation.z) * rotationSpeed * timeScale;
                 }
 
-                
                 if(this.isVRMode) this.effectVR.render(this.scene, this.activeCamera);
                 else if (this.config.aoEnabled && this.composer) this.composer.render();
                 else this.renderer.render(this.scene, this.activeCamera);

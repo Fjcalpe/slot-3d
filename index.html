@@ -1,0 +1,1327 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Slot Pro: Final - Velocidad Lenta & Sombras Corregidas</title>
+    <style>
+        body { 
+            margin: 0; padding: 0; overflow: hidden; 
+            background-color: #000; 
+            font-family: 'Segoe UI', sans-serif; touch-action: none; 
+            -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+        }
+        
+        canvas { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 100%; outline: none; }
+        
+        #loading {
+            position: absolute; top: 50%; width: 100%; text-align: center; left: 0;
+            color: #ffd700; font-size: 1.2rem; 
+            text-shadow: 2px 2px 4px #000; transition: opacity 0.5s;
+            pointer-events: none; z-index: 200;
+            background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px;
+        }
+
+        #torres-info {
+            position: absolute; top: 15vh; width: 100%; text-align: center;
+            color: #e0b0ff; 
+            font-size: 2rem; font-weight: bold; font-family: 'Courier New', monospace;
+            text-shadow: 0 0 10px #bc13fe, 0 0 20px #bc13fe;
+            z-index: 20;
+            pointer-events: none; opacity: 0; transition: opacity 0.5s;
+            letter-spacing: 2px;
+        }
+        #torres-info.active { opacity: 1; }
+
+        .icon-btn {
+            position: absolute; z-index: 100;
+            background: rgba(0,0,0,0.5); border: 2px solid #fff;
+            color: #fff; border-radius: 50%; w
+            width: 50px; height: 50px;
+            font-size: 24px; cursor: pointer; display: flex;
+            align-items: center; justify-content: center; transition: transform 0.1s;
+        }
+        .icon-btn:active { transform: scale(0.9); background: rgba(255,255,255,0.2); }
+
+        #vr-btn { bottom: 20px; left: 20px; }
+        #fs-manual-btn { top: 20px; right: 20px; font-size: 20px; }
+
+        #landscape-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); z-index: 999;
+            display: none; 
+            align-items: center; justify-content: center; flex-direction: column;
+            color: #ffd700; text-align: center; padding: 20px; box-sizing: border-box;
+        }
+        #landscape-overlay p { 
+            font-size: 1.2rem; margin-bottom: 30px; text-transform: uppercase; 
+            max-width: 16%; line-height: 1.5; color: #fff;
+        }
+        #enter-fs-btn {
+              background: #ffd700; color: #000; border: none; padding: 20px 40px;
+              font-size: 1.2rem; font-weight: bold; border-radius: 50px; cursor: pointer;
+              text-transform: uppercase; box-shadow: 0 0 20px #ffd700;
+              transition: transform 0.2s;
+        }
+        #enter-fs-btn:active { transform: scale(0.95); }
+
+        #debug-cycle {
+            position: absolute; top: 10px; left: 10px; color: lime; font-family: monospace; z-index: 500;
+            background: rgba(0,0,0,0.5); padding: 5px; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading">Cargando Recursos...</div>
+    <div id="debug-cycle">Tirada: 0/4</div>
+    <div id="torres-info">MODO TORRES: <span id="torres-count">0</span> SPINS</div>
+
+    <button id="vr-btn" class="icon-btn" title="Modo VR">👓</button>
+    <button id="fs-manual-btn" class="icon-btn" title="Pantalla Completa">⛶</button>
+
+    <div id="landscape-overlay">
+        <p>Para jugar en horizontal necesitamos ocultar la barra del navegador.</p>
+        <button id="enter-fs-btn">MODO CINE</button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
+        
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+        class SlotGame {
+            constructor() {
+                this.loadingText = document.getElementById('loading');
+                this.torresInfo = document.getElementById('torres-info');
+                this.torresCountSpan = document.getElementById('torres-count');
+                this.debugCycleDiv = document.getElementById('debug-cycle');
+
+                // --- CONSTANTES ---
+                this.CYLINDER_TARGET_WIDTH = 19.0;
+                this.CAM_LAND_DIST = 25.0; this.CAM_LAND_Y = 0.9; this.CAM_PORT_Y = 0.0; 
+                this.Z_VR = 42; this.Z_ZOOM = 14; this.TEXT_Z_POS = 15.0; 
+                
+                this.CAM_TORRES_X = 11.35; this.CAM_TORRES_Y = 8.80; this.CAM_TORRES_Z = 20.48;
+                this.CAM_TORRES_RX = -0.67; this.CAM_TORRES_RY = 0.55; this.CAM_TORRES_RZ = 0.40;
+                this.NUM_CARRETES = 3; this.NUM_CAPAS = 3; this.SEPARACION_CARRETES = 4.5;
+                this.NUM_ITEMS_POR_RUEDA = 8;
+                this.RADIO_ORBITA_BASE = 6.0; this.SEPARACION_CAPAS = 2.5; 
+                this.ANGLE_STEP = (Math.PI * 2) / this.NUM_ITEMS_POR_RUEDA;
+                
+                // ARCHIVOS GLOBALES (TODOS)
+                this.ALL_ASSETS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb', 'torre.glb', 'youwin2.glb'];
+                // SÍMBOLOS que van en los carretes
+                this.REEL_SYMBOLS_GLB = ['noel.glb', 'sirena.glb', 'xic.glb', 'goku.glb', 'torre.glb', 'noel.glb', 'sirena.glb', 'xic.glb'];
+                this.NOMBRES_SIMBOLOS = ['Noel', 'Sirena', 'Xic', 'Goku', 'Torre', 'Noel', 'Sirena', 'Xic']; 
+                
+                this.config = {
+                    sunIntensity: 2.8, sunPosY: 30, sunPosZ: 20, 
+                    fillIntensity: 0.0, 
+                    fillColor: '#fffbca',
+                    btnHoverEmissive: 3.095, lightHoverInt: 213, lightClickInt: 2889, btnIdleEmissive: 0.3, lightIdleInt: 50,
+                    aoEnabled: false, aoRadius: 3.68, aoMinDist: 0.001, aoMaxDist: 0.08265,
+                    landscapeRotX: -0.1, portraitRotX: 0.0, camRotY: 0.0, camRotZ: 0.0
+                };
+                this.CLICK_BTN_EMISSIVE = 20.0; 
+                
+                this.COIN_COUNT = 100; 
+                this.SPARKLE_COUNT = 1200; 
+                
+                this.DUST_COUNT = 3000;
+                this.COIN_GRAVITY = 20.0; 
+                this.COIN_SCALE = 0.8;
+                this.SPAWN_Y = -10.0; 
+                this.SPAWN_Z = 10.0; 
+                
+                this.MIN_APEX = -2.0; 
+                this.MAX_APEX = 3.0; 
+                
+                this.CENTER_X = 0;
+
+                // --- VARIABLES DE ESTADO ---
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.activeCamera = this.camera;
+                this.clock = new THREE.Clock();
+                this.loader = new GLTFLoader();
+                this.textureLoader = new THREE.TextureLoader();
+                this.reels = [];
+                this.reelStates = Array(this.NUM_CARRETES * this.NUM_CAPAS).fill(null).map(() => ({ mode: 'IDLE', velocity: 0, targetAngle: 0 }));
+                this.symbolMasters = {};
+                
+                this.coinsData = []; this.sparklesData = []; this.dustData = [];
+                this.dummy = new THREE.Object3D();
+                this.machineIsSpinning = false; this.isButtonDisabled = false; this.isVRMode = false;
+                
+                this.winSequence = { active: false, startTime: 0, fxSpawned: false, didAnchorZoomOut: false }; 
+                this.spinCounter = 0; 
+                this.isHovering = false; 
+                this.isRewardActive = false; 
+                this.isTorresActive = false;
+                this.torresState = {
+                    totalSpins: 6, spinsLeft: 0, currentLayer: 0, 
+                    lockedReels: [[true, true, true], [false, false, false], [false, false, false]], 
+                    baseSymbols: [null, null, null], layer1Symbols: [null, null, null], spinThreshold: 3 
+                };
+                this.targetX = 0; this.targetY = this.CAM_LAND_Y; this.targetZ = this.CAM_LAND_DIST;
+                this.targetRotX = this.config.landscapeRotX; this.targetRotY = this.config.camRotY; this.targetRotZ = this.config.camRotZ;
+                this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+                this.raycaster = new THREE.Raycaster();
+                this.pointer = new THREE.Vector2(); 
+
+                // Celebración original (celebracion.html) variables:
+                this.resultGroup = null;
+                this.shineLight = null;
+            }
+
+            // =====================================================================
+            // 3. FUNCIONES DE CARGA Y SETUP
+            // =====================================================================
+            setupRenderer() {
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(1); 
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
+                this.renderer.toneMapping = THREE.NoToneMapping;
+                document.body.appendChild(this.renderer.domElement);
+            }
+
+            setupVR() {
+                this.effectVR = new StereoEffect(this.renderer);
+                this.effectVR.eyeSeparation = 0.005;
+                this.effectVR.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            initPostProcessing() {
+                if (!this.config.aoEnabled) { this.composer = null; return; }
+                const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+                const renderTarget = new THREE.WebGLRenderTarget(size.width, size.height, { samples: 4, type: THREE.HalfFloatType });
+                this.composer = new EffectComposer(this.renderer, renderTarget);
+                const renderPass = new RenderPass(this.scene, this.activeCamera);
+                this.composer.addPass(renderPass);
+                const ssaoPass = new SSAOPass(this.scene, this.activeCamera, window.innerWidth, window.innerHeight);
+                ssaoPass.kernelRadius = this.config.aoRadius;
+                ssaoPass.minDistance = this.config.aoMinDist;
+                ssaoPass.maxDistance = this.config.maxDist;
+                ssaoPass.output = SSAOPass.OUTPUT.Default; 
+                this.composer.addPass(ssaoPass);
+                const outputPass = new OutputPass();
+                this.composer.addPass(outputPass);
+            }
+
+            async loadEnvironment() {
+                const cubemapTexture = await new Promise((resolve, reject) => this.textureLoader.load('cubemap.jpg', resolve, undefined, reject));
+                cubemapTexture.mapping = THREE.EquirectangularReflectionMapping;
+                const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+                pmremGenerator.compileEquirectangularShader();
+                const envMap = pmremGenerator.fromEquirectangular(cubemapTexture).texture;
+                this.scene.environment = envMap;
+                cubemapTexture.dispose(); pmremGenerator.dispose();
+            }
+
+            async safeLoadTexture(url) {
+                return new Promise(resolve => {
+                    this.textureLoader.load(url, resolve, undefined, () => {
+                        const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
+                        const ctx = canvas.getContext('2d');
+                        const grd = ctx.createRadialGradient(32,32,2, 32,32,30);
+                        grd.addColorStop(0, "white"); grd.addColorStop(1, "rgba(255,255,255,0)");
+                        ctx.fillStyle = grd; ctx.fillRect(0,0,64,64);
+                        resolve(new THREE.CanvasTexture(canvas));
+                    });
+                });
+            }
+
+            async safeLoadSymbol(file) {
+                return new Promise(resolve => {
+                    this.loader.load(file, (gltf) => { this.symbolMasters[file] = gltf.scene; resolve(); }, undefined, () => {
+                        const color = file === 'torre.glb' ? 0x9932CC : Math.random() * 0xffffff;
+                        const mesh = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color: color, transparent: true, alphaTest: 0.5}));
+                        const g = new THREE.Group(); g.add(mesh); this.symbolMasters[file] = g; resolve();
+                    });
+                });
+            }
+
+            async safeLoadStructure(file) {
+                return new Promise(resolve => {
+                    this.loader.load(file, (gltf) => {
+                        this.setupStructure(gltf.scene);
+                        if(gltf.animations.length) {
+                            this.buttonMixer = new THREE.AnimationMixer(gltf.scene);
+                            this.buttonAction = this.buttonMixer.clipAction(gltf.animations[0]);
+                            this.buttonAction.loop = THREE.LoopOnce; this.buttonAction.clampWhenFinished = true;
+                        }
+                        this.scene.add(gltf.scene); resolve();
+                    }, undefined, () => resolve());
+                });
+            }
+
+            async safeLoadCoins(file) {
+                return new Promise(resolve => {
+                    this.loader.load(file, (gltf) => {
+                        let geo, mat;
+                        gltf.scene.traverse(n => { 
+                            if(n.isMesh) { 
+                                geo = n.geometry; 
+                                mat = n.material; 
+                            } 
+                        });
+                        
+                        this.createCoinMesh(geo, mat); 
+                        resolve();
+                    }, undefined, () => {
+                        
+                        const geo = new THREE.CylinderGeometry(0.5,0.5,0.1,8);
+                        const mat = new THREE.MeshStandardMaterial({color:0xffd700});
+                        this.createCoinMesh(geo, mat); 
+                        resolve();
+                    });
+                });
+            }
+
+            createCoinMesh(geo, mat) {
+                this.coinInstancedMesh = new THREE.InstancedMesh(geo, mat, this.COIN_COUNT);
+                this.coinInstancedMesh.castShadow = false; this.coinInstancedMesh.receiveShadow = true;
+                for(let i=0; i<this.COIN_COUNT; i++) { this.dummy.scale.set(0,0,0); this.dummy.updateMatrix(); this.coinInstancedMesh.setMatrixAt(i, this.dummy.matrix); }
+                this.coinInstancedMesh.instanceMatrix.needsUpdate = true; this.scene.add(this.coinInstancedMesh);
+            }
+            
+            createLights() {
+                const amb = new THREE.AmbientLight(0xffffff, 0.6); this.scene.add(amb);
+                this.sunLight = new THREE.DirectionalLight(0xfffee0, this.config.sunIntensity);
+                this.sunLight.position.set(-10, this.config.sunPosY, this.config.sunPosZ);
+                this.sunLight.castShadow = true; 
+                this.sunLight.target.position.set(0, 0, 0); this.scene.add(this.sunLight.target);
+                this.sunLight.shadow.mapSize.set(1024, 1024);
+                const d = 30; this.sunLight.shadow.camera.left = -d; this.sunLight.shadow.camera.right = d; this.sunLight.shadow.camera.top = d; this.sunLight.shadow.camera.bottom = -d;
+                this.sunLight.shadow.bias = -0.0005; this.sunLight.shadow.normalBias = 0.02; this.scene.add(this.sunLight);
+
+                // LUZ DE RELLENO DESHABILITADA (fillIntensity: 0.0)
+                const fillPivot = new THREE.Object3D(); fillPivot.rotation.set(-3.06, -1.36, -2.31); this.scene.add(fillPivot);
+                this.fillLight = new THREE.DirectionalLight(this.config.fillColor, this.config.fillIntensity);
+                this.fillLight.position.set(-8.10, -4.57, -7.28); fillPivot.add(this.fillLight);
+
+                this.pointLight = new THREE.PointLight(0xffaa00, 0, 100);
+                this.pointLight.position.set(0, -5, 16);
+                this.pointLight.castShadow = true;
+                this.pointLight.shadow.bias = -0.0001; this.pointLight.shadow.normalBias = 0.02; 
+                this.pointLight.shadow.mapSize.width = 1024; this.pointLight.shadow.mapSize.height = 1024;
+                this.pointLight.shadow.camera.near = 0.1; this.scene.add(this.pointLight);
+            }
+
+            setupStructure(node) {
+                this.structureGroup = node;
+                if (node.name.toLowerCase() === 'spin') {
+                    this.spinGroup = node;
+                    node.traverse((child) => { if (child.isMesh) { child.material = child.material.clone(); child.userData.origColor = child.material.color.clone(); if(child.name.includes('arrow')) this.spinArrowMesh = child; else this.spinButtonMesh = child; } });
+                }
+            }
+
+            crearHilera(index, capaIndex) {
+                const reelGroup = new THREE.Group();
+                reelGroup.position.x = (index * this.SEPARACION_CARRETES) - ((this.NUM_CARRETES - 1) * this.SEPARACION_CARRETES / 2);
+                this.scene.add(reelGroup); this.reels.push(reelGroup);
+                const radioActual = this.RADIO_ORBITA_BASE + (capaIndex * this.SEPARACION_CAPAS);
+
+                if (capaIndex > 0) { reelGroup.visible = false; }
+
+                // Usamos REEL_SYMBOLS_GLB para los símbolos del carrete
+                for (let i = 0; i < this.NUM_ITEMS_POR_RUEDA; i++) {
+                    // CORRECCIÓN: Usar REEL_SYMBOLS_GLB que excluye youwin2.glb
+                    const glbName = this.REEL_SYMBOLS_GLB[i % this.REEL_SYMBOLS_GLB.length]; 
+                    let master = this.symbolMasters[glbName];
+                    if (!master) {
+                        const m = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color:0xff0000}));
+                        master = new THREE.Group(); master.add(m);
+                    }
+                    const model = master.clone();
+                    model.traverse(child => {
+                        if (child.isMesh) {
+                            child.material = child.material.clone();
+                            child.material.transparent = true; child.material.opacity = 1.0; 
+                            child.material.alphaTest = 0.5; 
+                            child.userData.originalColor = child.material.color.clone();
+                            child.userData.fadeLevel = 1.0; child.userData.isFading = false;
+                        }
+                    });
+                    const pivot = new THREE.Group(); pivot.rotation.x = (i * this.ANGLE_STEP);
+                    model.position.set(0, 0, radioActual); pivot.add(model); reelGroup.add(pivot);
+                }
+            }
+
+            createParticleSystems(sparkleTex) {
+                const sparkleMat = new THREE.MeshBasicMaterial({ map: sparkleTex, color: 0xffffff, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+                const geoS = new THREE.PlaneGeometry(0.3, 0.3); 
+                this.sparkleInstancedMesh = new THREE.InstancedMesh(geoS, sparkleMat, this.SPARKLE_COUNT);
+                this.sparkleInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+                this.scene.add(this.sparkleInstancedMesh);
+                
+                const dustMat = new THREE.MeshBasicMaterial({ map: sparkleTex, color: 0xffd700, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+                const geoD = new THREE.PlaneGeometry(0.05, 0.05); 
+                this.dustInstancedMesh = new THREE.InstancedMesh(geoD, dustMat, this.DUST_COUNT);
+                this.dustInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+                this.scene.add(this.dustInstancedMesh);
+
+                this.dummy.scale.set(0,0,0); this.dummy.updateMatrix();
+                for(let i=0; i<this.COIN_COUNT; i++) { this.coinInstancedMesh.setMatrixAt(i, this.dummy.matrix); }
+                for(let i=0; i<this.SPARKLE_COUNT; i++) { this.sparkleInstancedMesh.setMatrixAt(i, this.dummy.matrix); }
+                for(let i=0; i<this.DUST_COUNT; i++) { this.dustInstancedMesh.setMatrixAt(i, this.dummy.matrix); }
+            }
+
+            initParticleData() {
+                for(let i=0; i<this.COIN_COUNT; i++) { 
+                    
+                    this.coinsData.push({ position: new THREE.Vector3(), velocity: new THREE.Vector3(), rotation: new THREE.Euler(), active: false, life: 20.0 + Math.random(), offsetPhase: Math.random() * Math.PI * 2 }); 
+                }
+                for(let i=0; i<this.SPARKLE_COUNT; i++) { 
+                    
+                    this.sparklesData.push({ 
+                        position: new THREE.Vector3(), originPos: new THREE.Vector3(), velocity: new THREE.Vector3(), 
+                        active: false, life: 10.0 + Math.random(), 
+                        baseScale: 0.1 + Math.random() * 0.9, 
+                        offsetPhase: Math.random() * Math.PI * 2,
+                        // PROPIEDAD DE EDAD PARA EL FADE-IN
+                        age: 0,
+                        distFromCenter: 0
+                    }); 
+                }
+                for(let i=0; i<this.DUST_COUNT; i++) { 
+                    this.dustData.push({ 
+                        position: new THREE.Vector3((Math.random()-0.5)*50, (Math.random()-0.5)*30, (Math.random()*25)), 
+                        velocity: new THREE.Vector3((Math.random()-0.5)*0.5, (Math.random()-0.5)*0.5, 0), 
+                        active: true, life: Math.random(), baseScale: Math.random() * 0.5 + 0.5 
+                    }); 
+                }
+            }
+            
+            buildResultContainer() {
+                if (this.resultGroup) return; 
+                this.resultGroup = new THREE.Group();
+                
+                // Usamos youwin2.glb como modelo que realiza la celebración (cartel)
+                const master = this.symbolMasters['youwin2.glb'] || this.symbolMasters['noel.glb']; 
+                const resultModel = master ? master.clone() : new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color: 0xffd700}));
+                this.resultGroup.add(resultModel);
+                
+                // Luz de brillo (shineLight) para la celebración original
+                this.shineLight = new THREE.PointLight(0xffffff, 150, 15); 
+                this.shineLight.position.set(0, 50, 0); // Inicialmente fuera
+                this.resultGroup.add(this.shineLight);
+
+                this.resultGroup.position.set(0, this.CAM_LAND_Y, this.TEXT_Z_POS); 
+                this.resultGroup.visible = false; 
+                this.scene.add(this.resultGroup);
+            }
+
+
+            forceShadows(parent) {
+                parent.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true; child.receiveShadow = true;
+                        if(child.material && (child.material.transparent || child.material.alphaTest > 0)) {
+                            child.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: child.material.map, alphaTest: 0.5 });
+                        }
+                    }
+                });
+            }
+
+            // =====================================================================
+            // 4. MANEJO DE CÁMARA Y EVENTOS
+            // =====================================================================
+            addEventListeners() {
+                window.addEventListener('resize', this.onWindowResize.bind(this));
+                window.addEventListener('pointerdown', this.onPointerDown.bind(this));
+                window.addEventListener('pointermove', this.onPointerMove.bind(this));
+                document.getElementById('vr-btn').addEventListener('click', this.toggleVR.bind(this));
+                document.getElementById('enter-fs-btn').addEventListener('click', this.requestFullscreen.bind(this));
+                document.getElementById('fs-manual-btn').addEventListener('click', this.toggleFullscreen.bind(this));
+                document.addEventListener('fullscreenchange', this.checkOrientation.bind(this));
+                document.addEventListener('webkitfullscreenchange', this.checkOrientation.bind(this));
+            }
+
+            toggleVR() { 
+                this.isVRMode = !this.isVRMode; 
+                if (this.isVRMode) { if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); this.activeCamera = this.camera; } 
+                else { if (document.exitFullscreen) document.exitFullscreen(); this.onWindowResize(); } 
+                this.adjustCameraTarget(); 
+            }
+            
+            requestFullscreen() { 
+                const docEl = document.documentElement; 
+                const requestMethod = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen; 
+                if (requestMethod) { requestMethod.call(docEl).then(() => { document.getElementById('landscape-overlay').style.display = 'none'; this.checkOrientation(); }).catch(e => { document.getElementById('landscape-overlay').style.display = 'none'; }); } 
+            }
+
+            toggleFullscreen() { 
+                if (!document.fullscreenElement && !document.webkitFullscreenElement) { this.requestFullscreen(); } 
+                else { if (document.exitFullscreen) document.exitFullscreen(); else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); } 
+            }
+
+            onWindowResize() { 
+                const w = window.innerWidth, h = window.innerHeight; 
+                this.renderer.setSize(w, h); 
+                if(this.composer) { this.composer.setSize(w, h); } 
+                this.effectVR.setSize(w, h); 
+                this.camera.aspect = w / h; 
+                this.camera.updateProjectionMatrix(); 
+                this.checkOrientation(); 
+                this.adjustCameraTarget();
+            }
+            
+            checkOrientation() { 
+                if (!this.isMobile) return; 
+                const isLandscape = window.innerWidth > window.innerHeight; 
+                const isFS = document.fullscreenElement || document.webkitFullscreenElement; 
+                document.getElementById('landscape-overlay').style.display = (isLandscape && !isFS) ? 'flex' : 'none';
+            }
+            
+            adjustCameraTarget() { 
+                const aspect = window.innerWidth / window.innerHeight; 
+                
+                if (this.isTorresActive) {
+                    this.targetX = this.CAM_TORRES_X; this.targetY = this.CAM_TORRES_Y; this.targetZ = this.CAM_TORRES_Z;
+                    this.targetRotX = this.CAM_TORRES_RX; this.targetRotY = this.CAM_TORRES_RY; this.targetRotZ = this.CAM_TORRES_RZ;
+                } else {
+                    this.targetRotY = this.config.camRotY; this.targetRotZ = this.config.camRotZ; this.targetX = 0.0; 
+                    if (aspect >= 1.0) { 
+                        this.camera.fov = 40; this.targetZ = this.CAM_LAND_DIST; this.targetY = this.CAM_LAND_Y; this.targetRotX = this.config.landscapeRotX;
+                    } else { 
+                        this.camera.fov = 75; this.targetZ = (this.CYLINDER_TARGET_WIDTH / 2.0) / (aspect * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2.0)));
+                        this.targetY = this.CAM_PORT_Y; this.targetRotX = this.config.portraitRotX;
+                    } 
+                    if (this.isVRMode) { this.targetZ = this.Z_VR; this.targetY = 0; this.targetX = 0; this.targetRotX = 0; } 
+                }
+                this.camera.updateProjectionMatrix(); 
+            }
+
+            onPointerMove(e) { 
+                this.pointer.x = (e.clientX / window.innerWidth) * 2 - 1; 
+                this.pointer.y = - (e.clientY / window.innerHeight) * 2 + 1; 
+                if (!this.isButtonDisabled && (this.spinGroup || this.structureGroup)) { 
+                    this.raycaster.setFromCamera(this.pointer, this.activeCamera); 
+                    let hit = false; 
+                    if (this.spinGroup && this.raycaster.intersectObject(this.spinGroup, true).length > 0) hit = true; 
+                    else if (this.structureGroup && this.raycaster.intersectObject(this.structureGroup, true).length > 0) hit = true; 
+                    this.isHovering = hit; 
+                    document.body.style.cursor = hit ? 'pointer' : 'default'; 
+                } else { 
+                    this.isHovering = false; 
+                    document.body.style.cursor = 'default'; 
+                } 
+            }
+
+            onPointerDown(e) { 
+                if (e.target.tagName === 'BUTTON') return; 
+                if (this.isButtonDisabled) return; 
+                this.pointer.x = (e.clientX / window.innerWidth) * 2 - 1; 
+                this.pointer.y = - (e.clientY / window.innerHeight) * 2 + 1; 
+                this.raycaster.setFromCamera(this.pointer, this.activeCamera); 
+                let hit = false; 
+                if (this.spinGroup && this.raycaster.intersectObject(this.spinGroup, true).length > 0) hit = true; 
+                if (!hit && this.structureGroup && this.raycaster.intersectObject(this.structureGroup, true).length > 0) hit = true; 
+                if (hit) this.spinMachine(); 
+            }
+
+            // =====================================================================
+            // 5. LÓGICA DE JUEGO (REGULAR Y TORRES)
+            // =====================================================================
+
+            spinMachine() {
+                if (this.machineIsSpinning || this.isButtonDisabled) return;
+
+                if (this.isTorresActive) { this.cleanupTorresVisuals(); this.isTorresActive = false; this.torresInfo.classList.remove('active'); }
+
+                this.machineIsSpinning = true; this.isButtonDisabled = true; this.isZoomed = false;
+                this.adjustCameraTarget(); this.resetCoinsAndFX();
+                if (this.resultGroup) { this.resultGroup.visible = false; } 
+                if(this.buttonAction) { this.buttonAction.reset(); this.buttonAction.play(); }
+                this.isLightFlashing = true; setTimeout(() => this.isLightFlashing = false, 200);
+                
+                this.spinCounter++; 
+                this.debugCycleDiv.innerText = `Tirada: ${this.spinCounter} / 4`;
+
+                // --- LÓGICA DE TRUCAJE SECUENCIAL ---
+                let forcedIndex;
+                
+                if (this.spinCounter === 1 || this.spinCounter === 2) {
+                    // Tirada 1 y 2: Premio Regular (Noel = índice 0)
+                    forcedIndex = 0; 
+                    console.log(`[TRUCO] Tirada ${this.spinCounter}: Forzando Premio Regular (Noel).`);
+                } else if (this.spinCounter === 3) {
+                    // Tirada 3: Sin Premio (Siren = índice 1)
+                    forcedIndex = 1; 
+                    console.log(`[TRUCO] Tirada ${this.spinCounter}: Forzando NO Premio.`);
+                } else if (this.spinCounter === 4) {
+                    // Tirada 4: Disparar Fase Torres (Torre = índice 4)
+                    forcedIndex = 4;
+                    console.log(`[TRUCO] Tirada ${this.spinCounter}: Forzando 3x Torre.`);
+                    this.spinCounter = 0;
+                } else {
+                    // Si el contador supera 4 (después de la Fase Torres)
+                    forcedIndex = 1; 
+                }
+                
+                const BASE_REELS = [0, 1, 2];
+                BASE_REELS.forEach(i => {
+                    this.reelStates[i].mode = 'SPINNING'; this.reelStates[i].velocity = 0; 
+                });
+                for(let i=3; i < this.NUM_CARRETES * this.NUM_CAPAS; i++) { this.reelStates[i].mode = 'IDLE'; }
+
+                for (let i = 0; i < this.NUM_CARRETES; i++) setTimeout(() => {
+                    const globalIndex = i;
+                    const state = this.reelStates[globalIndex]; 
+                    state.mode = 'STOPPING';
+                    const currentRot = this.reels[globalIndex].rotation.x; 
+                    const nextRound = Math.ceil(currentRot / (Math.PI*2)) + 2 + i;
+                    
+                    let finalIndex = forcedIndex;
+                    if (this.spinCounter === 3 && i > 0) {
+                        finalIndex = (forcedIndex + i) % this.NUM_ITEMS_POR_RUEDA; 
+                    }
+                    
+                    // Asegura que el símbolo 'finalIndex' aterrice al frente.
+                    state.targetAngle = (nextRound * Math.PI * 2) - (finalIndex * this.ANGLE_STEP);
+
+                }, 200 + (i * 600)); 
+            }
+
+            checkResults() {
+                const resultIndices = [this.reels[0], this.reels[1], this.reels[2]].map(r => { 
+                    let ang = r.rotation.x % (Math.PI*2); if(ang < 0) ang += (Math.PI*2); 
+                    
+                    const indexAtAngle = Math.round((2 * Math.PI - ang) / this.ANGLE_STEP) % this.NUM_ITEMS_POR_RUEDA;
+                    return indexAtAngle;
+                });
+                
+                const names = resultIndices.map(i => this.NOMBRES_SIMBOLOS[i]);
+                this.torresState.baseSymbols = [...names];
+
+                // NUEVA LÓGICA: 3 Torres van directo a modo torres
+                const isTorresWin = (names[0] === 'Torre' && names[1] === 'Torre' && names[2] === 'Torre');
+                const hasRegularWin = (names[0] === names[1] && names[1] === names[2] && !isTorresWin);
+
+                if (isTorresWin) {
+                    setTimeout(() => this.startTorresMode(), 500);
+                } else if (hasRegularWin) {
+                    this.triggerWin(names); 
+                } else { 
+                    this.isButtonDisabled = false; 
+                }
+            }
+
+            triggerWin(names) {
+                // El modelo que aparece SIEMPRE debe ser 'youwin2.glb' (el cartel de victoria).
+                let modelFile = 'youwin2.glb';
+                
+                // 1. Actualizar el resultGroup con el modelo YOUWIN2.GLB
+                if (this.resultGroup) {
+                    this.resultGroup.remove(...this.resultGroup.children); 
+                    
+                    const master = this.symbolMasters[modelFile] || this.symbolMasters['noel.glb'];
+                    const resultModel = master ? master.clone() : new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({ color: 0xffd700 }));
+                    this.resultGroup.add(resultModel);
+                    this.resultGroup.add(this.shineLight); 
+                    
+                    // Oculto al principio, aparecerá solo tras el zoom out
+                    this.resultGroup.visible = false;
+                    
+                    // Asegura la posición inicial fuera para que la animación de entrada funcione
+                    this.resultGroup.position.set(0, this.activeCamera.position.y, this.activeCamera.position.z + 50);
+                }
+
+                this.isButtonDisabled = true; this.isRewardActive = true;
+                this.winSequence.active = true; 
+                this.winSequence.startTime = this.clock.getElapsedTime(); 
+                this.winSequence.fxSpawned = false; 
+                this.winSequence.didAnchorZoomOut = false; 
+                
+                this.adjustCameraTarget(); 
+            }
+
+            
+            startTorresMode() {
+                this.isTorresActive = true; this.isButtonDisabled = true;
+                this.torresState.totalSpins = 6; this.torresState.spinsLeft = this.torresState.totalSpins; 
+                this.torresState.currentLayer = 1; this.torresState.spinThreshold = 3; 
+                this.torresState.lockedReels = [[true, true, true], [false, false, false], [false, false, false]];
+                this.torresState.layer1Symbols = [null, null, null];
+                this.torresInfo.classList.add('active'); 
+                this.torresCountSpan.innerText = this.torresState.spinsLeft;
+                
+                this.toggleLayerVisibility(1, true); 
+                this.adjustCameraTarget();
+                setTimeout(this.spinTorresLoop.bind(this), 1500); 
+            }
+
+            toggleLayerVisibility(layerIdx, isVisible) {
+                const startIdx = layerIdx * this.NUM_CARRETES;
+                for(let i=0; i<this.NUM_CARRETES; i++) { 
+                    if(this.reels[startIdx + i]) this.reels[startIdx + i].visible = isVisible; 
+                }
+            }
+
+            cleanupTorresVisuals() {
+                this.toggleLayerVisibility(1, false);
+                this.toggleLayerVisibility(2, false);
+                this.adjustCameraTarget();
+            }
+
+            spinTorresLoop() {
+                this.torresCountSpan.innerText = this.torresState.spinsLeft;
+                if (this.torresState.spinsLeft <= 0 && this.torresState.currentLayer > 2) { this.endTorresMode(); return; }
+
+                const layerIdx = this.torresState.currentLayer;
+                this.toggleLayerVisibility(layerIdx, true);
+                const reelsStartIndex = layerIdx * this.NUM_CARRETES; 
+                let activeReelsCount = 0;
+
+                for (let i = 0; i < 3; i++) {
+                    if (this.torresState.lockedReels[layerIdx][i]) continue;
+                    if (layerIdx === 2 && !this.torresState.lockedReels[1][i]) { this.reels[reelsStartIndex + i].visible = false; continue; }
+
+                    this.reels[reelsStartIndex + i].visible = true; 
+                    const globalIndex = reelsStartIndex + i;
+                    const r = this.reels[globalIndex]; 
+                    
+                    r.children.forEach(p => { p.children[0].traverse(c => { if (c.isMesh) { c.userData.isFading = false; c.userData.fadeLevel = 1.0; } }); });
+
+                    this.reelStates[globalIndex].mode = 'SPINNING';
+                    this.reelStates[globalIndex].velocity = 0; 
+                    activeReelsCount++;
+                }
+
+                if (activeReelsCount === 0) {
+                    if (this.torresState.currentLayer === 1) { 
+                        const lockedCountL1 = this.torresState.lockedReels[1].filter(Boolean).length;
+                        if (lockedCountL1 === 0) { this.endTorresMode(); return; }
+                        this.torresState.currentLayer = 2; 
+                        this.spinTorresLoop(); 
+                    } else { 
+                        this.endTorresMode(); 
+                    }
+                    return;
+                }
+
+                setTimeout(() => {
+                    for (let i = 0; i < 3; i++) {
+                        const globalIndex = reelsStartIndex + i;
+                        if (this.reelStates[globalIndex].mode === 'SPINNING') {
+                            const state = this.reelStates[globalIndex];
+                            state.mode = 'STOPPING';
+                            const currentRot = this.reels[globalIndex].rotation.x;
+                            const nextRound = Math.ceil(currentRot / (Math.PI*2)) + 1;
+                            
+                            let randIndex;
+                            if (layerIdx === 2) {
+                                randIndex = 4;
+                            } else {
+                                if (this.torresState.spinsLeft <= 3 && !this.torresState.lockedReels[1].every(v => v)) {
+                                    randIndex = 0; 
+                                } else {
+                                    randIndex = Math.floor(Math.random() * this.NUM_ITEMS_POR_RUEDA);
+                                }
+                            }
+                            
+                            state.targetAngle = (nextRound * this.ANGLE_STEP) + (randIndex * this.ANGLE_STEP);
+                        }
+                    }
+                    setTimeout(this.evaluateTorresSpin.bind(this), 1500); 
+                }, 1000);
+                this.torresState.spinsLeft--;
+            }
+
+            evaluateTorresSpin() {
+                const layerIdx = this.torresState.currentLayer;
+                const reelsStartIndex = layerIdx * this.NUM_CARRETES;
+                const currentSymbols = [];
+                for(let i=0; i<3; i++) {
+                    const r = this.reels[reelsStartIndex + i];
+                    let ang = r.rotation.x % (Math.PI*2); if(ang < 0) ang += (Math.PI*2);
+                    const idx = Math.round((2 * Math.PI - ang) / this.ANGLE_STEP) % this.NUM_ITEMS_POR_RUEDA;
+                    currentSymbols.push(this.NOMBRES_SIMBOLOS[idx]);
+                }
+                const targetSymbols = (layerIdx === 1) ? this.torresState.baseSymbols : this.torresState.layer1Symbols;
+                
+                for (let i = 0; i < 3; i++) {
+                    if (this.torresState.lockedReels[layerIdx][i]) continue;
+                    if (layerIdx === 2 && !this.torresState.lockedReels[1][i]) continue;
+
+                    if (currentSymbols[i] === targetSymbols[i]) {
+                        this.torresState.lockedReels[layerIdx][i] = true;
+                    } else {
+                        const globalIndex = reelsStartIndex + i;
+                        this.markReelSymbolForFade(this.reels[globalIndex]);
+                    }
+                }
+                if (layerIdx === 1) { this.torresState.layer1Symbols = [...currentSymbols]; }
+                
+                const lockedCount = this.torresState.lockedReels[layerIdx].filter(Boolean).length;
+                
+                
+                if (layerIdx === 1) {
+                    
+                    if (lockedCount === 3 || this.torresState.spinsLeft <= 0) {
+                          if (lockedCount === 0) { this.endTorresMode(); return; } 
+                          this.torresState.currentLayer = 2; 
+                        this.spinTorresLoop(); 
+                    }
+                }
+                
+                
+                if (layerIdx === 2 && this.torresState.spinsLeft <= 0) {
+                     this.endTorresMode(); 
+                     return;
+                }
+
+                setTimeout(this.spinTorresLoop.bind(this), 500);
+            }
+
+            markReelSymbolForFade(reelGroup) {
+                const reelAngle = reelGroup.rotation.x;
+                reelGroup.children.forEach(pivot => {
+                    let angle = (reelAngle + pivot.rotation.x) % (Math.PI * 2);
+                    if (angle < 0) angle += Math.PI*2;
+                    if (angle < 0.1 || angle > 6.18) {
+                        pivot.children[0].traverse(c => { if (c.isMesh) c.userData.isFading = true; });
+                    }
+                });
+            }
+
+            endTorresMode() {
+                let l1Full = this.torresState.lockedReels[1].every(v => v);
+                let l2Full = this.torresState.lockedReels[2].every(v => v);
+                let multiplier = l2Full ? 3 : (l1Full ? 2 : 1);
+                
+                this.isTorresActive = false; 
+                this.torresInfo.classList.remove('active'); 
+                this.cleanupTorresVisuals();
+
+                if (multiplier > 1) { 
+                    // Si gana un multiplicador, disparamos la celebración (modelo YOUWIN2.GLB)
+                    this.triggerWin(['FINAL_WIN']); 
+                } else { 
+                    setTimeout(() => { 
+                        this.isButtonDisabled = false; 
+                    }, 3000); 
+                }
+            }
+
+            spawnCoins() { 
+                const MAX_WIDTH_SPAWN = 10.0; 
+                const CENTER_SPAWN_X = this.CENTER_X; 
+                const COIN_SPAWN_Z = this.SPAWN_Z; 
+
+                for(let i=0; i < this.COIN_COUNT; i++) { 
+                    const data = this.coinsData[i]; 
+                    data.active = true; 
+                    data.life = 5.0 + Math.random(); 
+                    
+                    const targetHeight = this.MIN_APEX + Math.random() * (this.MAX_APEX - this.MIN_APEX);
+                    const height = targetHeight - this.SPAWN_Y;
+                    
+                    
+                    const v0 = Math.sqrt(2 * this.COIN_GRAVITY * height); 
+                    
+                    
+                    data.position.set(CENTER_SPAWN_X + (Math.random() - 0.5) * MAX_WIDTH_SPAWN, 
+                                    this.SPAWN_Y, 
+                                    COIN_SPAWN_Z + (Math.random() - 0.5) * 2.0); 
+                    
+                    
+                    data.velocity.set((Math.random() - 0.5) * 5.0, 
+                                    v0 + (Math.random() * 3.0), 
+                                    (Math.random() - 0.5) * 2.0); 
+                    
+                    data.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI); 
+                } 
+            }
+
+            spawnSparkles() {
+                
+                const cartelX = this.CENTER_X; 
+                // --- AJUSTE DE POSICIÓN Y TAMAÑO ---
+                const cartelY = 1.0; 
+                const cartelZ = this.TEXT_Z_POS; 
+                
+                // Radio más pequeño (80% del anterior)
+                const RADIUS_X = 10.0; 
+                const RADIUS_Y = 2.5;  
+                
+                const SPEED_FACTOR = 3.5; 
+
+                if(!this.sparkleInstancedMesh) return;
+
+                for(let i=0; i<this.SPARKLE_COUNT; i++) {
+                    const s = this.sparklesData[i]; 
+                    s.active = true; 
+                    s.age = 0; 
+                    s.life = 10.0 + Math.random(); 
+                    s.baseScale = 0.1 + Math.random() * 0.9;
+                    
+                    const angle = s.offsetPhase; 
+                    
+                    // --- RELLENO DEL ÓVALO ---
+                    // Multiplicamos por factor aleatorio para cubrir superficie
+                    const distFactor = Math.random(); 
+                    
+                    const radiusX = (RADIUS_X * distFactor) + (Math.random() - 0.5) * 0.5;
+                    const radiusY = (RADIUS_Y * distFactor) + (Math.random() - 0.5) * 0.2;
+
+                    s.distFromCenter = Math.sqrt(radiusX*radiusX + radiusY*radiusY);
+
+                    s.originPos.set(cartelX + radiusX * Math.cos(angle), 
+                                    cartelY + radiusY * Math.sin(angle), 
+                                    cartelZ + (Math.random() - 0.5) * 2.0);
+                                    
+                    s.position.copy(s.originPos);
+                    
+                    s.velocity.set((Math.random() - 0.5) * 0.3 * SPEED_FACTOR, 
+                                    (Math.random() - 0.5) * 0.3 * SPEED_FACTOR, 
+                                    (Math.random() - 0.5) * 0.3 * SPEED_FACTOR); 
+                }
+            }
+
+            resetCoinsAndFX() { 
+                this.dummy.scale.set(0,0,0); this.dummy.updateMatrix(); 
+                if (this.coinInstancedMesh) { 
+                    for(let i=0; i < this.COIN_COUNT; i++) { this.coinsData[i].active = false; this.coinInstancedMesh.setMatrixAt(i, this.dummy.matrix); } 
+                    this.coinInstancedMesh.instanceMatrix.needsUpdate = true; 
+                }
+                if (this.sparkleInstancedMesh) {
+                    for(let i=0; i < this.SPARKLE_COUNT; i++) { 
+                        this.sparklesData[i].active = false; 
+                        this.sparkleInstancedMesh.setMatrixAt(i, this.dummy.matrix); 
+                    }
+                    this.sparkleInstancedMesh.instanceMatrix.needsUpdate = true;
+                }
+            }
+
+            updateSequence(time) {
+                if (!this.winSequence.active) {
+                    if (this.shineLight) this.shineLight.position.set(0, 50, 0); 
+                    return;
+                }
+                
+                const elapsed = time - this.winSequence.startTime;
+                const PHASE3_START = 2.0;
+                const SEQUENCE_DURATION = PHASE3_START + 5.0; 
+
+                // Lógica de Aparición de Efectos
+                if (elapsed >= PHASE3_START && !this.winSequence.fxSpawned) {
+                     this.spawnCoins(); 
+                     this.spawnSparkles();
+                     this.winSequence.fxSpawned = true;
+                     if(this.resultGroup) { 
+                        this.resultGroup.visible = true;
+                        this.resultGroup.position.z = 45.0; 
+                     }
+                }
+
+                if (elapsed >= PHASE3_START && elapsed < SEQUENCE_DURATION && this.resultGroup && this.resultGroup.visible) {
+                    const effectTime = elapsed - PHASE3_START;
+                    let currentZ = 0;
+
+                    if (effectTime < 1.0) {
+                        const t = effectTime / 1.0;
+                        const ease = 1 - Math.pow(1 - t, 3); 
+                        currentZ = 45.0 - (45.0 - 15.0) * ease;
+                    } 
+                    else if (effectTime < 2.5) {
+                        const t = (effectTime - 1.0) / 1.5;
+                        currentZ = 15.0 - (15.0 - 14.0) * t;
+                    } 
+                    else {
+                        const t = (effectTime - 2.5);
+                        const accel = t * t * 15.0; 
+                        currentZ = 14.0 + accel;
+                    }
+
+                    this.resultGroup.position.z = currentZ;
+
+                    if (this.shineLight) {
+                         const sweep = Math.sin(time * 3.0) * 10.0;
+                         this.shineLight.position.set(sweep, 0, 5.0);
+                    }
+                }
+                
+                if (elapsed >= SEQUENCE_DURATION) {
+                    this.winSequence.active = false;
+                    this.isRewardActive = false;
+                    if(this.resultGroup) { this.resultGroup.visible = false; }
+                    this.resetCoinsAndFX();
+                    
+                    const names = this.torresState.baseSymbols;
+                    if (names.includes('Torre')) {
+                        this.startTorresMode();
+                    } else {
+                         this.isButtonDisabled = false; 
+                    }
+                }
+            }
+
+            updateSymbolVisibility() {
+                this.reels.forEach((reelGroup) => {
+                    if (!reelGroup.visible && reelGroup.position.z > this.SEPARACION_CAPAS * 0.5) return; 
+
+                    const reelAngle = reelGroup.rotation.x;
+                    reelGroup.children.forEach((pivotGroup) => {
+                        const symbolAngle = pivotGroup.rotation.x; 
+                        let totalAngle = (reelAngle + symbolAngle) % (Math.PI * 2); 
+                        if(totalAngle < 0) totalAngle += (Math.PI * 2);
+
+                        const cosA = Math.cos(totalAngle);
+                        
+                        const symbolWrapper = pivotGroup.children[0]; 
+                        if (symbolWrapper) {
+                            symbolWrapper.traverse((child) => {
+                                if (child.isMesh && child.material && child.userData.originalColor) {
+                                    let brightness = (cosA > 0) ? Math.pow(cosA, 0.5) : 0.05;
+                                    let rowOpacity = 1.0; 
+
+                                    // Lógica de fading de la Fase Torres (20% opacidad en filas sup/inf)
+                                    if (this.isTorresActive) { 
+                                        // Si es capa trasera, mantener fading de distancia
+                                        if (reelGroup.position.z > this.SEPARACION_CAPAS * 0.5) {
+                                            if (cosA < 0.95) rowOpacity = 0.15; 
+                                            if (child.userData.isFading) {
+                                                child.userData.fadeLevel = Math.max(0, child.userData.fadeLevel - 0.05 * this.clock.getDelta() * 60);
+                                            }
+                                        } else {
+                                            // Capa frontal: Si no está en el centro (cosA cerca de 1), opacidad 20%
+                                            if (cosA < 0.95) {
+                                                rowOpacity = 0.2; 
+                                            }
+                                        }
+                                    } else {
+                                        child.userData.fadeLevel = 1.0;
+                                    }
+
+                                    let finalOpacity = rowOpacity * child.userData.fadeLevel;
+                                    child.material.opacity = finalOpacity;
+                                    child.material.alphaTest = (finalOpacity < 0.01) ? 0 : 0.5;
+                                    child.material.color.copy(child.userData.originalColor).multiplyScalar(brightness);
+                                    
+                                    // --- NUEVA LÓGICA DE SOMBRAS ---
+                                    // Si estamos en Torres y la fila es transparente (rowOpacity < 0.5), desactivar sombra
+                                    if (this.isTorresActive && rowOpacity < 0.5) {
+                                        child.castShadow = false;
+                                    } else {
+                                        child.castShadow = true;
+                                    }
+                                }
+                            });
+                        }
+                    });
+                });
+            }
+
+            updateParticles(delta, time) {
+                
+                if(this.coinInstancedMesh) {
+                    this.coinsData.forEach((data, i) => {
+                        if (data.active) {
+                            data.velocity.y -= this.COIN_GRAVITY * delta;
+                            data.position.addScaledVector(data.velocity, delta);
+
+                            if (data.position.y < -50) {
+                                data.active = false;
+                            }
+                            
+                            data.life -= delta;
+                            if (data.life <= 0) data.active = false; 
+
+                            data.rotation.x += 5 * delta; data.rotation.y += 3 * delta;
+
+                            this.dummy.position.copy(data.position);
+                            this.dummy.rotation.copy(data.rotation);
+                            this.dummy.scale.set(this.COIN_SCALE, this.COIN_SCALE, this.COIN_SCALE);
+                            this.dummy.updateMatrix();
+                            this.coinInstancedMesh.setMatrixAt(i, this.dummy.matrix);
+                        } else {
+                            this.dummy.scale.set(0,0,0); this.dummy.updateMatrix();
+                            this.coinInstancedMesh.setMatrixAt(i, this.dummy.matrix);
+                        }
+                    });
+                    this.coinInstancedMesh.instanceMatrix.needsUpdate = true;
+                }
+
+                
+                if(this.sparkleInstancedMesh) {
+                    const elapsedTotal = time - this.winSequence.startTime;
+                    const PHASE3_START = 2.0;
+                    const effectTime = (this.winSequence.active && elapsedTotal > PHASE3_START) ? (elapsedTotal - PHASE3_START) : 0;
+                    
+                    const isExiting = (effectTime > 2.5);
+                    const exitTime = isExiting ? (effectTime - 2.5) : 0;
+
+                    this.sparklesData.forEach((s, i) => {
+                        if(s.active) {
+                            s.age += delta;
+                            s.life -= delta;
+                            
+                            s.position.addScaledVector(s.velocity, delta);
+                            
+                            let appearFactor = Math.min(s.age / 0.5, 1.0);
+
+                            if (isExiting) {
+                                const delay = s.distFromCenter * 0.05; 
+                                if (exitTime > delay) {
+                                    s.velocity.z += 50.0 * delta; 
+                                }
+                            }
+                            
+                            const pulseFactor = 0.75 + 0.25 * Math.sin(time * 8 + s.offsetPhase);
+                            const finalScale = s.baseScale * pulseFactor * appearFactor;
+
+                            if(s.life <= 0) s.active = false;
+                            
+                            this.dummy.position.copy(s.position);
+                            this.dummy.quaternion.copy(this.activeCamera.quaternion); 
+                            this.dummy.scale.set(finalScale, finalScale, finalScale);
+                            this.dummy.updateMatrix();
+                            this.sparkleInstancedMesh.setMatrixAt(i, this.dummy.matrix);
+                        } else {
+                            this.dummy.scale.set(0,0,0); this.dummy.updateMatrix();
+                            this.sparkleInstancedMesh.setMatrixAt(i, this.dummy.matrix);
+                        }
+                    });
+                    this.sparkleInstancedMesh.instanceMatrix.needsUpdate = true;
+                }
+
+                
+                if(this.dustInstancedMesh) {
+                    if (this.winSequence.active || this.isTorresActive) { 
+                        this.dustInstancedMesh.visible = true; 
+                        this.dustData.forEach((d, i) => {
+                            d.position.addScaledVector(d.velocity, delta);
+                            
+                            if(d.position.x > 50) d.position.x = -50;
+                            if(d.position.x < -50) d.position.x = 50;
+                            if(d.position.y > 30) d.position.y = -30;
+                            if(d.position.y < -30) d.position.y = 30;
+                            
+                            const osc = Math.sin(time + i) * 0.2 + 0.8;
+                            this.dummy.position.copy(d.position);
+                            this.dummy.quaternion.copy(this.activeCamera.quaternion);
+                            this.dummy.scale.set(d.baseScale * osc, d.baseScale * osc, d.baseScale * osc);
+                            this.dummy.updateMatrix();
+                            this.dustInstancedMesh.setMatrixAt(i, this.dummy.matrix);
+                        });
+                        this.dustInstancedMesh.instanceMatrix.needsUpdate = true;
+                    } else {
+                        this.dustInstancedMesh.visible = false; 
+                    }
+                }
+            }
+
+            
+            animate() {
+                requestAnimationFrame(this.animate.bind(this));
+                const delta = Math.min(this.clock.getDelta(), 0.1);
+                const time = this.clock.getElapsedTime();
+                const timeScale = delta * 60;
+
+                if(this.buttonMixer) this.buttonMixer.update(delta);
+                this.updateSequence(time); 
+                this.updateParticles(delta, time); 
+                this.updateSymbolVisibility();
+
+                let allIdle = true;
+                this.reels.forEach((r, i) => {
+                    const s = this.reelStates[i];
+                    if(!r.visible && i >= this.NUM_CARRETES) { s.mode = 'IDLE'; return; }
+                    
+                    if(s.mode === 'SPINNING') { 
+                        allIdle = false; 
+                        // --- VELOCIDAD REDUCIDA A LA MITAD (0.25 -> 0.125) ---
+                        if(s.velocity < 0.125) s.velocity += 0.005 * timeScale; 
+                        r.rotation.x += s.velocity * timeScale; 
+                    } else if(s.mode === 'STOPPING') { 
+                        allIdle = false; 
+                        const diff = s.targetAngle - r.rotation.x; 
+                        s.velocity += diff * 0.25 * timeScale; 
+                        s.velocity *= Math.pow(0.80, timeScale); 
+                        r.rotation.x += s.velocity * timeScale; 
+                        if(Math.abs(diff) < 0.005 && Math.abs(s.velocity) < 0.005) { 
+                            r.rotation.x = s.targetAngle; s.mode = 'IDLE'; 
+                        } 
+                    }
+                });
+                
+                if(allIdle && this.machineIsSpinning) { 
+                    this.machineIsSpinning = false; 
+                    if (!this.isTorresActive) { 
+                        this.checkResults();
+                    }
+                }
+
+                
+                let targetBtnInt = 0; let targetLightInt = 0;
+                let targetSun = this.config.sunIntensity; let targetFill = this.config.fillIntensity;
+
+                const effectiveHover = (this.isHovering && !this.isButtonDisabled && !this.isRewardActive && !this.isTorresActive); 
+
+                if (effectiveHover !== this.wasHoveringState) {
+                    if (this.sunLight) this.sunLight.castShadow = !effectiveHover; 
+                    this.wasHoveringState = effectiveHover;
+                }
+
+                if (this.isRewardActive || this.isTorresActive) { targetSun = this.config.sunIntensity; targetFill = this.config.fillIntensity;
+                } else if (effectiveHover) { targetSun = this.config.sunIntensity * 0.5; targetFill = 0.0; }
+                
+                if (this.sunLight) this.sunLight.intensity += (targetSun - this.sunLight.intensity) * 0.1;
+                if (this.fillLight) this.fillLight.intensity += (targetFill - this.fillLight.intensity) * 0.1;
+
+                if (this.isLightFlashing) {
+                    targetBtnInt = this.CLICK_BTN_EMISSIVE; targetLightInt = this.config.lightClickInt; if(this.pointLight) this.pointLight.color.setHex(0xFFFFFF);
+                } else if (this.isButtonDisabled || this.isTorresActive) {
+                    targetBtnInt = 0.0; targetLightInt = 0; if(this.pointLight) this.pointLight.color.setHex(0xFFAA00);
+                } else {
+                    targetBtnInt = effectiveHover ? this.config.btnHoverEmissive : this.config.btnIdleEmissive;
+                    targetLightInt = effectiveHover ? this.config.lightHoverInt : this.config.lightIdleInt;
+                    if(this.pointLight) this.pointLight.color.setHex(0xFFAA00);
+                }
+
+                if (this.spinButtonMesh && this.spinButtonMesh.material) this.spinButtonMesh.material.emissiveIntensity += (targetBtnInt - this.spinButtonMesh.material.emissiveIntensity) * 0.2;
+                if (this.pointLight) { this.pointLight.intensity += (targetLightInt - this.pointLight.intensity) * 0.2; this.pointLight.distance = 134; }
+
+                
+                let currentTargetZ = this.targetZ;
+                let currentTargetY = this.targetY;
+                let currentTargetRotX = this.targetRotX;
+                let currentTargetRotY = this.targetRotY;
+                let currentTargetRotZ = this.targetRotZ;
+
+                let cameraInterpolationSpeed = 0.05;
+                let skipPositionUpdate = false; 
+                
+                
+                if (this.winSequence.active && !this.isTorresActive && !this.isVRMode) {
+                    const elapsed = time - this.winSequence.startTime;
+                    
+                    
+                    if (elapsed < 1.0) {
+                        
+                        const t = elapsed / 1.0;
+                        const ease = t * (2 - t);
+                        currentTargetZ = THREE.MathUtils.lerp(this.targetZ, this.Z_ZOOM, ease);
+                        currentTargetY = this.targetY;
+                        cameraInterpolationSpeed = 0.15; 
+                    } 
+                    else if (elapsed < 2.0) {
+                        
+                        const t = (elapsed - 1.0) / 1.0;
+                        const ease = t * t * (3 - 2 * t);
+                        currentTargetZ = THREE.MathUtils.lerp(this.Z_ZOOM, this.targetZ, ease);
+                        currentTargetY = this.targetY;
+                        cameraInterpolationSpeed = 0.15; 
+                    }
+                    else {
+                        
+                        currentTargetZ = this.targetZ; 
+                        currentTargetY = this.targetY;
+                    }
+
+                } else {
+                    
+                    currentTargetZ = this.targetZ;
+                    currentTargetY = this.targetY;
+                }
+
+                
+                if (!skipPositionUpdate) {
+                    this.activeCamera.rotation.x += (currentTargetRotX - this.activeCamera.rotation.x) * cameraInterpolationSpeed * timeScale;
+                    this.activeCamera.rotation.y += (currentTargetRotY - this.activeCamera.rotation.y) * cameraInterpolationSpeed * timeScale;
+                    this.activeCamera.rotation.z += (currentTargetRotZ - this.activeCamera.rotation.z) * cameraInterpolationSpeed * timeScale;
+
+                    this.activeCamera.position.x += (this.targetX - this.activeCamera.position.x) * cameraInterpolationSpeed * timeScale;
+                    this.activeCamera.position.z += (currentTargetZ - this.activeCamera.position.z) * cameraInterpolationSpeed * timeScale;
+                    this.activeCamera.position.y += (currentTargetY - this.activeCamera.position.y) * cameraInterpolationSpeed * timeScale;
+                } else {
+                    
+                    const rotationSpeed = cameraInterpolationSpeed; 
+                    this.activeCamera.rotation.x += (currentTargetRotX - this.activeCamera.rotation.x) * rotationSpeed * timeScale;
+                    this.activeCamera.rotation.y += (currentTargetRotY - this.activeCamera.rotation.y) * rotationSpeed * timeScale;
+                    this.activeCamera.rotation.z += (currentTargetRotZ - this.activeCamera.rotation.z) * rotationSpeed * timeScale;
+                }
+
+                
+                if(this.isVRMode) this.effectVR.render(this.scene, this.activeCamera);
+                else if (this.config.aoEnabled && this.composer) this.composer.render();
+                else this.renderer.render(this.scene, this.activeCamera);
+            }
+            
+            init() {
+                this.setupRenderer();
+                this.setupVR();
+                this.loadingText.innerText = "Cargando Recursos...";
+                this.loadResources();
+            }
+
+            async loadResources() {
+                try {
+                    await this.loadEnvironment();
+                    this.createLights();
+                    this.loadingText.innerText = "Cargando Texturas FX...";
+                    const sparkleTex = await this.safeLoadTexture('destello.webp');
+                    this.loadingText.innerText = "Cargando Modelos...";
+                    
+                    const uniqueFiles = [...new Set([...this.ALL_ASSETS_GLB, 'youwin2.glb'])];
+                    for (const file of uniqueFiles) await this.safeLoadSymbol(file);
+                    
+                    await this.safeLoadStructure('cilindro.glb');
+                    
+                    await this.safeLoadCoins('moneda.glb');
+                    
+                    this.createParticleSystems(sparkleTex);
+                    this.initParticleData();
+
+                    this.loadingText.innerText = "Construyendo Slot...";
+                    for(let capa = 0; capa < this.NUM_CAPAS; capa++) {
+                        for(let r = 0; r < this.NUM_CARRETES; r++) { this.crearHilera(r, capa); }
+                    }
+                    this.buildResultContainer(); 
+                    this.forceShadows(this.scene);
+                    this.initPostProcessing();
+
+                    this.loadingText.innerText = "Optimizando Gráficos...";
+                    
+                    if(this.resultGroup) { this.resultGroup.visible = true; this.resultGroup.position.set(0, 0, 500); } 
+                    this.renderer.compile(this.scene, this.camera);
+                    if(this.resultGroup) { 
+                        this.resultGroup.visible = false; 
+                        this.resultGroup.position.set(0, this.CAM_LAND_Y, this.TEXT_Z_POS); 
+                    }
+
+                    this.loadingText.style.display = 'none';
+                    this.addEventListeners();
+                    this.onWindowResize(); 
+                    this.animate();
+                } catch (err) {
+                    this.loadingText.innerText = "Error: " + err.message; console.error(err);
+                }
+            }
+        }
+
+        const game = new SlotGame();
+        game.init();
+    </script>
+</body>
+</html>

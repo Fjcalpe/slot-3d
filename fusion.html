@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Slot Pro: Final - Clean Entry & Orange Pulse</title>
+    <title>Slot Pro: Final - Bigger Top Sparks</title>
     <style>
         body { 
             margin: 0; padding: 0; overflow: hidden; 
@@ -104,6 +104,118 @@
         import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
         import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
+        // --- SISTEMA DE PARTÍCULAS PARA SÍMBOLOS BLOQUEADOS (CHISPAS SUPERIORES) ---
+        class LockedParticles {
+            constructor(scene, texture) {
+                this.scene = scene;
+                this.particles = [];
+                // MOD: Aumentado pool para soportar más partículas
+                this.limit = 1500; 
+                
+                // MOD: Tamaño x2 (0.8 en lugar de 0.4)
+                const geo = new THREE.PlaneGeometry(0.8, 0.8); 
+                const mat = new THREE.MeshBasicMaterial({
+                    map: texture,
+                    transparent: true,
+                    opacity: 1,
+                    depthWrite: false,
+                    blending: THREE.AdditiveBlending,
+                    color: 0xFFCC00 // Amarillo anaranjado
+                });
+                
+                this.mesh = new THREE.InstancedMesh(geo, mat, this.limit);
+                this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+                this.scene.add(this.mesh);
+                
+                this.dummy = new THREE.Object3D();
+                
+                for(let i=0; i<this.limit; i++) {
+                    this.particles.push({
+                        active: false,
+                        pos: new THREE.Vector3(),
+                        vel: new THREE.Vector3(),
+                        life: 0,
+                        maxLife: 1.0,
+                        scale: 1.0
+                    });
+                }
+            }
+
+            spawn(position, count = 1) {
+                let spawned = 0;
+                for(let i=0; i<this.limit; i++) {
+                    if(!this.particles[i].active) {
+                        const p = this.particles[i];
+                        p.active = true;
+                        
+                        p.pos.copy(position);
+                        // MOD: Centradas horizontalmente (menor dispersión X)
+                        p.pos.x += (Math.random() - 0.5) * 1.0; 
+                        // MOD: Nacen en la parte SUPERIOR del símbolo (+1.0 en Y)
+                        p.pos.y += 1.0 + (Math.random() * 0.5); 
+                        p.pos.z += 2.2; // Offset Z hacia cámara
+                        
+                        // MOD: Velocidad ascendente mucho mayor (x2) y menos deriva lateral
+                        p.vel.set(
+                            (Math.random() - 0.5) * 0.2, 
+                            4.0 + Math.random() * 3.0,   // Suben muy rápido
+                            0
+                        ); 
+                        
+                        p.life = 0;
+                        // Vida ajustada para que desaparezcan rápido arriba
+                        p.maxLife = 0.5 + Math.random() * 0.5; 
+                        p.scale = 0.6 + Math.random() * 0.4;
+                        
+                        spawned++;
+                        if(spawned >= count) break;
+                    }
+                }
+            }
+
+            update(delta, camera) {
+                let activeCount = 0;
+                for(let i=0; i<this.limit; i++) {
+                    const p = this.particles[i];
+                    if(p.active) {
+                        p.life += delta;
+                        if(p.life >= p.maxLife) {
+                            p.active = false;
+                            this.dummy.scale.set(0,0,0);
+                        } else {
+                            p.pos.addScaledVector(p.vel, delta);
+                            
+                            // Shrink effect (Se hacen pequeñas hasta desaparecer)
+                            const progress = p.life / p.maxLife;
+                            // Se hacen más pequeñas más rápido al final
+                            const size = p.scale * Math.pow(1.0 - progress, 1.5); 
+                            
+                            this.dummy.position.copy(p.pos);
+                            this.dummy.quaternion.copy(camera.quaternion);
+                            this.dummy.scale.set(size, size, size);
+                            activeCount++;
+                        }
+                    } else {
+                        this.dummy.scale.set(0,0,0);
+                    }
+                    this.dummy.updateMatrix();
+                    this.mesh.setMatrixAt(i, this.dummy.matrix);
+                }
+                if (activeCount > 0 || this.mesh.count > 0) {
+                     this.mesh.instanceMatrix.needsUpdate = true;
+                }
+            }
+            
+            reset() {
+                 for(let i=0; i<this.limit; i++) { this.particles[i].active = false; }
+                 this.dummy.scale.set(0,0,0);
+                 this.dummy.updateMatrix();
+                 for(let i=0; i<this.limit; i++) { this.mesh.setMatrixAt(i, this.dummy.matrix); }
+                 this.mesh.instanceMatrix.needsUpdate = true;
+            }
+        }
+
+
         // --- CLASE EXPLOSIÓN: EFECTO ESCOMBROS ---
         class ExplosionMesh {
             constructor(originalMesh, scene, objectToHide, delay = 0) {
@@ -133,7 +245,7 @@
 
                 for (let i = 0; i < vertexCount; i += 3) {
                     if (currentChunkCounter <= 0) {
-                        currentChunkSize = (Math.floor(Math.random() * 12) + 6) * 4; 
+                        currentChunkSize = 100; // Cluster grande
                         currentChunkCounter = currentChunkSize;
 
                         const x = (positionAttribute.getX(i) + positionAttribute.getX(i+1) + positionAttribute.getX(i+2)) / 3;
@@ -144,8 +256,7 @@
                         const noise = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
                         const finalDir = new THREE.Vector3().copy(radialDir).lerp(noise, 0.4).normalize();
 
-                        let speed = 2.0 + Math.random() * 5.0; 
-                        if (Math.random() > 0.85) { speed += 10.0 + (Math.random() * 15.0); }
+                        let speed = 1.0 + Math.random() * 2.0; 
                         finalDir.multiplyScalar(speed);
                         
                         chunkDirX = finalDir.x;
@@ -323,6 +434,7 @@
 
                 this.resultGroup = null;
                 this.shineLight = null;
+                this.lockedParticles = null; // New system
             }
 
             setupRenderer() {
@@ -518,6 +630,9 @@
                 this.dummy.scale.set(0,0,0); this.dummy.updateMatrix();
                 for(let i=0; i<this.COIN_COUNT; i++) { this.coinInstancedMesh.setMatrixAt(i, this.dummy.matrix); }
                 for(let i=0; i<this.SPARKLE_COUNT; i++) { this.sparkleInstancedMesh.setMatrixAt(i, this.dummy.matrix); }
+
+                // INICIAR NUEVO SISTEMA DE PARTÍCULAS BLOQUEADAS
+                this.lockedParticles = new LockedParticles(this.scene, sparkleTex);
             }
 
             initParticleData() {
@@ -689,6 +804,7 @@
                 this.activeExplosions = [];
                 this.swellingMeshes = [];
                 this.popInMeshes = [];
+                if(this.lockedParticles) this.lockedParticles.reset();
             }
 
             spinMachine() {
@@ -802,7 +918,7 @@
                 this.torresInfo.classList.add('active'); 
                 this.torresCountSpan.innerText = this.torresState.spinsLeft;
                 
-                // Ocultar capas internas inicialmente (Empty Start)
+                // MOD: Capas internas ocultas al viajar
                 this.toggleLayerVisibility(1, false); 
                 this.toggleLayerVisibility(2, false); 
 
@@ -886,13 +1002,18 @@
                     const targetSymbolName = this.torresState.baseSymbols[i];
                     const targetIndex = this.NOMBRES_SIMBOLOS.indexOf(targetSymbolName);
                     
-                    // Si ya esta bloqueado, mantener
                     if (this.torresState.lockedReels[layerIdx][i]) {
                         targetIndices[i] = targetIndex;
                     } else {
-                        // Si no, tirada aleatoria REAL
-                        let rnd = Math.floor(Math.random() * 8);
-                        targetIndices[i] = rnd;
+                        // MOD: Mayor variedad, fallo aleatorio puro
+                        if (Math.random() < 0.4) {
+                             targetIndices[i] = targetIndex; 
+                        } else {
+                             let rnd = Math.floor(Math.random() * 8);
+                             // Forzamos que sea distinto si sale igual por azar, para animar la explosión
+                             if(rnd === targetIndex) rnd = (rnd + 1) % 8;
+                             targetIndices[i] = rnd;
+                        }
                     }
                 }
 
@@ -952,8 +1073,13 @@
                     return;
                 }
 
-                // TIEMPO DE ESPERA REDUCIDO (400ms)
-                setTimeout(this.evaluateTorresSpin.bind(this), 400); 
+                // MOD: Si cambiamos capa externa, INSTANTANEO (100ms)
+                let delayNext = 400;
+                if (layerIdx === 2 && this.torresState.currentLayer === 2) {
+                     delayNext = 100; // Rapidez capa externa
+                }
+                
+                setTimeout(this.evaluateTorresSpin.bind(this), delayNext); 
                 this.torresState.spinsLeft--;
             }
 
@@ -1035,6 +1161,10 @@
                         if(c.isMesh) {
                             c.userData.isPulsing = true;
                             c.userData.pulseTimer = 0;
+                            // SPAWN PARTICLES (MOD: 4 VECES MAS = 12)
+                            const worldPos = new THREE.Vector3();
+                            c.getWorldPosition(worldPos);
+                            if(this.lockedParticles) this.lockedParticles.spawn(worldPos, 12);
                         }
                     });
                 }
@@ -1284,12 +1414,23 @@
                                         child.userData.pulseTimer += visualDelta * 5.0; 
                                         const sine = (Math.sin(child.userData.pulseTimer) + 1) * 0.5; 
                                         
-                                        // MODIFICADO: Color Naranja Dorado y menor intensidad
-                                        child.material.emissive.setHex(0xFF8C00); // Dark Orange
-                                        child.material.emissiveIntensity = 0.2 + (sine * 0.6); // 0.2 a 0.8
+                                        // MOD: Gradiente Naranja -> Amarillo
+                                        const color1 = new THREE.Color(0xFF4500); // OrangeRed
+                                        const color2 = new THREE.Color(0xFFFF00); // Yellow
+                                        const finalColor = color1.lerp(color2, sine);
+                                        
+                                        child.material.emissive.copy(finalColor);
+                                        child.material.emissiveIntensity = 0.2 + (sine * 0.6); 
                                         
                                         const scale = 1.0 + (sine * 0.1);
                                         child.scale.set(scale, scale, scale);
+                                        
+                                        // Emit particles
+                                        if(Math.random() > 0.9 && this.lockedParticles) {
+                                            const worldPos = new THREE.Vector3();
+                                            child.getWorldPosition(worldPos);
+                                            this.lockedParticles.spawn(worldPos);
+                                        }
 
                                     } else {
                                         let isSpecial = false;
@@ -1346,7 +1487,8 @@
 
             updateParticles(delta, time) {
                 this.updateSwellings(delta);
-                this.updatePopIns(delta); // Update Pop-ins
+                this.updatePopIns(delta); 
+                if(this.lockedParticles) this.lockedParticles.update(delta, this.activeCamera);
 
                 for (let i = this.activeExplosions.length - 1; i >= 0; i--) {
                     const finished = !this.activeExplosions[i].update(delta);

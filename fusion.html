@@ -1,13 +1,9 @@
-{
-type: downloadable file
-fileName: fusion_final_v15.html
-fullContent:
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Slot Pro: Animation Fix</title>
+    <title>Slot Pro: Audio & Sync</title>
     <style>
         body { 
             margin: 0; padding: 0; overflow: hidden; 
@@ -249,6 +245,51 @@ fullContent:
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
         import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+        // --- SISTEMA DE AUDIO (NUEVO) ---
+        class CoinAudio {
+            constructor() {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.connect(this.ctx.destination);
+            }
+
+            resume() {
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+            }
+
+            triggerBurst(duration = 4.0) {
+                this.resume();
+                const now = this.ctx.currentTime;
+                
+                // Volumen global con fade out
+                this.masterGain.gain.setValueAtTime(0.4, now);
+                this.masterGain.gain.linearRampToValueAtTime(0, now + duration);
+
+                // Generar múltiples osciladores para simular tintineo
+                const count = 40; 
+                for(let i=0; i<count; i++) {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+
+                    const offset = Math.random() * (duration * 0.6); 
+                    const freq = 1200 + Math.random() * 1300; // Frecuencias altas metálicas
+
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, now + offset);
+                    
+                    gain.gain.setValueAtTime(0, now + offset);
+                    gain.gain.linearRampToValueAtTime(0.15, now + offset + 0.01);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.15);
+
+                    osc.start(now + offset);
+                    osc.stop(now + offset + 0.2);
+                }
+            }
+        }
 
         // --- SISTEMA DE PARTÍCULAS ---
         class LockedParticles {
@@ -689,6 +730,10 @@ fullContent:
                 this.resultGroup = null;
                 this.shineLight = null;
                 this.lockedParticles = null; 
+                
+                // INICIALIZAR AUDIO
+                this.coinAudio = new CoinAudio();
+                this.currentWinAction = null; // Guardar referencia a la animación de win
             }
 
             setupRenderer() {
@@ -1135,6 +1180,9 @@ this.CAM_TORRES_RX = ${r.x.toFixed(2)}; this.CAM_TORRES_RY = ${r.y.toFixed(2)}; 
             }
 
             spinMachine() {
+                // Activar contexto de audio al interactuar
+                if (this.coinAudio) this.coinAudio.resume();
+
                 if (this.machineIsSpinning || this.isButtonDisabled) return;
 
                 this.hardResetVisuals();
@@ -1234,15 +1282,19 @@ this.CAM_TORRES_RX = ${r.x.toFixed(2)}; this.CAM_TORRES_RY = ${r.y.toFixed(2)}; 
                     // USO DE SKELETON UTILS PARA CLONAR ANIMACIONES
                     const resultModel = clone(master);
                     
-                    // Si tiene animacion (ej: es el youwin2 bueno), la reproducimos
+                    // Si tiene animacion (ej: es el youwin2 bueno), la preparamos pero NO la reproducimos aún
                     if (master && master.userData.animations && master.userData.animations.length > 0) {
                          // Detener mixer anterior si existe
                          if (this.winMixer) {
                              this.winMixer.stopAllAction();
                          }
                          this.winMixer = new THREE.AnimationMixer(resultModel);
-                         const action = this.winMixer.clipAction(master.userData.animations[0]);
-                         action.play();
+                         this.currentWinAction = this.winMixer.clipAction(master.userData.animations[0]);
+                         // IMPORTANTE: Resetear y parar. La reproducimos cuando entra en pantalla.
+                         this.currentWinAction.reset();
+                         this.currentWinAction.stop(); 
+                    } else {
+                        this.currentWinAction = null;
                     }
                     
                     this.resultGroup.add(resultModel);
@@ -1999,9 +2051,19 @@ this.CAM_TORRES_RX = ${r.x.toFixed(2)}; this.CAM_TORRES_RY = ${r.y.toFixed(2)}; 
                       this.spawnCoins(); 
                       this.spawnSparkles();
                       this.winSequence.fxSpawned = true;
+                      
+                      // DISPARAR SONIDO DE MONEDAS
+                      if(this.coinAudio) this.coinAudio.triggerBurst(5.0);
+
                       if(this.resultGroup) { 
                         this.resultGroup.visible = true;
                         this.resultGroup.position.z = 45.0; 
+                        
+                        // DISPARAR ANIMACIÓN DEL MODELO AQUÍ (SINCRONIZADA)
+                        if (this.currentWinAction) {
+                            this.currentWinAction.reset();
+                            this.currentWinAction.play();
+                        }
                       }
                 }
 
